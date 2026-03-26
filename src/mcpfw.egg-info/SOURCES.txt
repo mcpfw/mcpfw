@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/mcpfw/__init__.py
+src/mcpfw/cli.py
+src/mcpfw/logger.py
+src/mcpfw/parser.py
+src/mcpfw/policy.py
+src/mcpfw/wrapper.py
+src/mcpfw.egg-info/PKG-INFO
+src/mcpfw.egg-info/SOURCES.txt
+src/mcpfw.egg-info/dependency_links.txt
+src/mcpfw.egg-info/entry_points.txt
+src/mcpfw.egg-info/requires.txt
+src/mcpfw.egg-info/top_level.txt
+tests/test_policy.py

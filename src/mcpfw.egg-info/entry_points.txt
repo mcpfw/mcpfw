@@ -1,0 +1,2 @@
+[console_scripts]
+mcpfw = mcpfw.cli:main

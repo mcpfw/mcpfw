@@ -1,0 +1,47 @@
+Metadata-Version: 2.4
+Name: mcpfw
+Version: 0.1.0
+Summary: The runtime firewall for Model Context Protocol (MCP)
+Author-email: Mohamed Waseem <mwaseem@defendai.tech>
+License-Expression: Apache-2.0
+Keywords: mcp,firewall,security,ai-agents,llm
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: System Administrators
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Security
+Classifier: Topic :: Software Development :: Libraries
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+
+# mcpfw — The runtime firewall for MCP
+
+**mcpfw** is a runtime firewall for the Model Context Protocol (MCP). It sits between AI clients (Claude Desktop, Cursor, VS Code) and MCP servers, enforcing security policies on every tool call.
+
+## Quick Start
+
+```bash
+pip install mcpfw
+mcpfw init
+```
+
+Then update your Claude Desktop config to wrap MCP servers:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "mcpfw",
+      "args": ["wrap", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp/safe-dir"]
+    }
+  }
+}
+```
+
+## License
+
+Apache 2.0
