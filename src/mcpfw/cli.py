@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+import textwrap
 from pathlib import Path
+
+import yaml
 
 from . import __version__
 from .logger import AuditLogger
@@ -120,7 +123,11 @@ def _cmd_wrap(args: argparse.Namespace) -> None:
             server_name = server_cmd[0]
 
     # Load policy
-    policy = load_policy(args.policy)
+    try:
+        policy = load_policy(args.policy)
+    except (ValueError, yaml.YAMLError) as e:
+        print(f"[mcpfw] Error: failed to load policy: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # Set up audit logger
     logger = AuditLogger(
@@ -187,60 +194,60 @@ def _cmd_verify(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-DEFAULT_POLICY = """\
-# mcpfw policy — The runtime firewall for MCP
-# https://mcpfw.dev
-#
-# This policy file controls what MCP tool calls are allowed, blocked,
-# or flagged. Edit it to match your security requirements.
+DEFAULT_POLICY = textwrap.dedent(r"""
+    # mcpfw policy — The runtime firewall for MCP
+    # https://mcpfw.dev
+    #
+    # This policy file controls what MCP tool calls are allowed, blocked,
+    # or flagged. Edit it to match your security requirements.
 
-version: 1
-default_action: allow
-
-# Global response scanning rules
-# These apply to ALL MCP server responses regardless of server
-response_rules:
-  - name: detect-ssn
-    detect_patterns:
-      - "\\\\b\\\\d{3}-\\\\d{2}-\\\\d{4}\\\\b"
-    action: log
-    severity: critical
-    reason: "Possible SSN detected in MCP response"
-
-  - name: detect-api-key
-    detect_patterns:
-      - "(?i)(api[_-]?key|secret[_-]?key|access[_-]?token)\\\\s*[=:]\\\\s*\\\\S+"
-    action: log
-    severity: warning
-    reason: "Possible API key or secret detected in MCP response"
-
-# Per-server policies
-servers:
-  # Filesystem MCP server — restrict to safe directories
-  - server: "@modelcontextprotocol/server-filesystem"
+    version: 1
     default_action: allow
-    blocked_tools:
-      - write_file
-      - create_directory
-      - move_file
-    tool_rules:
-      - name: restrict-paths
-        tools: ["read_file", "read_text_file", "list_directory", "search_files"]
-        allow_paths:
-          - /tmp/
-          - /home/
-        reason: "File access restricted to /tmp/ and /home/"
 
-  # Example: block all tools on an untrusted server
-  # - server: "untrusted-mcp-server"
-  #   default_action: block
+    # Global response scanning rules
+    # These apply to ALL MCP server responses regardless of server
+    response_rules:
+      - name: detect-ssn
+        detect_patterns:
+          - '\b\d{3}-\d{2}-\d{4}\b'
+        action: log
+        severity: critical
+        reason: "Possible SSN detected in MCP response"
 
-  # Example: allow only specific tools
-  # - server: "@some/mcp-server"
-  #   allowed_tools:
-  #     - safe_tool_1
-  #     - safe_tool_2
-"""
+      - name: detect-api-key
+        detect_patterns:
+          - '(?i)(api[_-]?key|secret[_-]?key|access[_-]?token)\s*[=:]\s*\S+'
+        action: log
+        severity: warning
+        reason: "Possible API key or secret detected in MCP response"
+
+    # Per-server policies
+    servers:
+      # Filesystem MCP server — restrict to safe directories
+      - server: "@modelcontextprotocol/server-filesystem"
+        default_action: allow
+        blocked_tools:
+          - write_file
+          - create_directory
+          - move_file
+        tool_rules:
+          - name: restrict-paths
+            tools: ["read_file", "read_text_file", "list_directory", "search_files"]
+            allow_paths:
+              - /tmp/
+              - ~/
+            reason: "File access restricted to /tmp/ and your home directory"
+
+      # Example: block all tools on an untrusted server
+      # - server: "untrusted-mcp-server"
+      #   default_action: block
+
+      # Example: allow only specific tools
+      # - server: "@some/mcp-server"
+      #   allowed_tools:
+      #     - safe_tool_1
+      #     - safe_tool_2
+""").lstrip()
 
 
 if __name__ == "__main__":

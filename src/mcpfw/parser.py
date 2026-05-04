@@ -85,6 +85,8 @@ def parse_message(raw_line: str, direction: MessageDirection) -> MCPMessage | No
     elif result is not None:
         message_type = MessageType.RESPONSE
     else:
+        # Forward-compatible passthrough: treat unrecognized message shapes as responses
+        # so they are proxied through rather than silently dropped.
         message_type = MessageType.RESPONSE
 
     msg = MCPMessage(

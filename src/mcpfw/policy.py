@@ -5,6 +5,7 @@ Loads YAML policy files and evaluates MCP messages against rules.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 import sys
 from dataclasses import dataclass, field
@@ -15,6 +16,11 @@ from typing import Any
 import yaml
 
 from .parser import MCPMessage
+
+_PATH_ARG_KEYS: tuple[str, ...] = (
+    "path", "directory", "file", "filepath", "filename",
+    "src", "source", "destination", "dest", "target",
+)
 
 
 class Action(Enum):
@@ -57,7 +63,7 @@ class ToolRule:
     block_patterns: list[str] = field(default_factory=list)
     # Block if any argument value matches these exact strings (case-insensitive)
     block_values: list[str] = field(default_factory=list)
-    # Allow only these argument values for specific keys
+    # Allow only filesystem paths under these allowed roots (checked via canonical paths).
     allow_paths: list[str] = field(default_factory=list)
     # Rate limiting (future)
     rate_limit: dict[str, Any] | None = None
@@ -183,19 +189,12 @@ class Policy:
         return ServerPolicy(default_action=self.default_action)
 
     def _tool_matches(self, tool_name: str | None, tool_patterns: list[str]) -> bool:
-        """Check if a tool name matches any of the patterns."""
+        """Check if a tool name matches any of the patterns (supports shell-style globs)."""
         if tool_name is None:
             return False
         for pattern in tool_patterns:
-            if pattern == "*":
+            if fnmatch.fnmatch(tool_name, pattern):
                 return True
-            if pattern == tool_name:
-                return True
-            # Simple glob matching
-            if "*" in pattern:
-                regex = pattern.replace("*", ".*")
-                if re.match(regex, tool_name):
-                    return True
         return False
 
     def _evaluate_tool_rule(
@@ -241,15 +240,25 @@ class Policy:
 
         # Check allow_paths (for filesystem tools)
         if rule.allow_paths:
-            path_arg = arguments.get("path", arguments.get("directory", ""))
-            if isinstance(path_arg, str) and path_arg:
-                if not any(path_arg.startswith(p) for p in rule.allow_paths):
+            path_arg = next(
+                (arguments[k] for k in _PATH_ARG_KEYS if k in arguments and isinstance(arguments[k], str)),
+                None,
+            )
+            if path_arg:
+                if not self._is_path_allowed(path_arg, rule.allow_paths):
                     return Verdict(
                         action=Action.BLOCK,
                         rule_name=rule.name,
                         reason=rule.reason or f"Path '{path_arg}' is outside allowed paths",
                         severity=rule.severity,
                     )
+            else:
+                return Verdict(
+                    action=Action.BLOCK,
+                    rule_name=rule.name,
+                    reason=rule.reason or "No path argument found; blocked by allow_paths rule",
+                    severity=rule.severity,
+                )
 
         # If rule says LOG, return log verdict
         if rule.action == Action.LOG:
@@ -261,6 +270,32 @@ class Policy:
             )
 
         return None
+
+    def _is_path_allowed(self, raw_path: str, allowed_roots: list[str]) -> bool:
+        """Check whether raw_path is under any allowed root (after canonicalization)."""
+        try:
+            candidate = Path(raw_path).expanduser()
+            # Resolve without requiring the path to exist (prevents traversal bypass).
+            candidate_resolved = candidate.resolve(strict=False)
+        except Exception:
+            return False
+
+        for root in allowed_roots:
+            try:
+                root_path = Path(root).expanduser().resolve(strict=False)
+            except Exception:
+                continue
+
+            # Exact match allowed, and any descendant allowed.
+            if candidate_resolved == root_path:
+                return True
+            try:
+                candidate_resolved.relative_to(root_path)
+                return True
+            except Exception:
+                continue
+
+        return False
 
     def _evaluate_response_rule(
         self, text: str, rule: ResponseRule
@@ -281,11 +316,42 @@ class Policy:
         return None
 
     def _flatten_arguments(self, arguments: dict[str, Any]) -> str:
-        """Flatten all argument values into a single searchable string."""
-        parts = []
-        for key, value in arguments.items():
-            parts.append(f"{key}={value}")
-        return " ".join(parts)
+        """Recursively flatten all argument values into a single searchable string."""
+        def _extract_strings(obj: Any) -> list[str]:
+            if isinstance(obj, str):
+                return [obj]
+            if isinstance(obj, dict):
+                result = []
+                for k, v in obj.items():
+                    result.append(str(k))
+                    result.extend(_extract_strings(v))
+                return result
+            if isinstance(obj, (list, tuple)):
+                result = []
+                for item in obj:
+                    result.extend(_extract_strings(item))
+                return result
+            return [str(obj)]
+
+        return " ".join(_extract_strings(arguments))
+
+
+def _parse_action(value: str, context: str) -> Action:
+    """Parse an action string with a descriptive error on failure."""
+    try:
+        return Action(value)
+    except ValueError:
+        valid = [a.value for a in Action]
+        raise ValueError(f"Invalid action '{value}' in {context}. Valid values: {valid}") from None
+
+
+def _parse_severity(value: str, context: str) -> Severity:
+    """Parse a severity string with a descriptive error on failure."""
+    try:
+        return Severity(value)
+    except ValueError:
+        valid = [s.value for s in Severity]
+        raise ValueError(f"Invalid severity '{value}' in {context}. Valid values: {valid}") from None
 
 
 def load_policy(path: str | Path) -> Policy:
@@ -303,7 +369,7 @@ def load_policy(path: str | Path) -> Policy:
 
     policy = Policy(
         version=data.get("version", 1),
-        default_action=Action(data.get("default_action", "allow")),
+        default_action=_parse_action(data.get("default_action", "allow"), "policy.default_action"),
         verify_server_tools=data.get("verify_server_tools", False),
     )
 
@@ -320,9 +386,10 @@ def load_policy(path: str | Path) -> Policy:
 
 def _parse_server_policy(data: dict[str, Any]) -> ServerPolicy:
     """Parse a server policy from YAML data."""
+    server_name = data.get("server", "*")
     sp = ServerPolicy(
-        server=data.get("server", "*"),
-        default_action=Action(data.get("default_action", "allow")),
+        server=server_name,
+        default_action=_parse_action(data.get("default_action", "allow"), f"server '{server_name}'.default_action"),
         blocked_tools=data.get("blocked_tools", []),
         allowed_tools=data.get("allowed_tools"),
     )
@@ -342,11 +409,12 @@ def _parse_tool_rule(data: dict[str, Any]) -> ToolRule:
     if isinstance(tools, str):
         tools = [tools]
 
+    rule_name = data.get("name", "unnamed")
     return ToolRule(
-        name=data.get("name", "unnamed"),
+        name=rule_name,
         tools=tools,
-        action=Action(data.get("action", "allow")),
-        severity=Severity(data.get("severity", "info")),
+        action=_parse_action(data.get("action", "allow"), f"tool_rule '{rule_name}'.action"),
+        severity=_parse_severity(data.get("severity", "info"), f"tool_rule '{rule_name}'.severity"),
         reason=data.get("reason", ""),
         block_patterns=data.get("block_patterns", []),
         block_values=data.get("block_values", []),
@@ -356,10 +424,11 @@ def _parse_tool_rule(data: dict[str, Any]) -> ToolRule:
 
 def _parse_response_rule(data: dict[str, Any]) -> ResponseRule:
     """Parse a response rule from YAML data."""
+    rule_name = data.get("name", "unnamed")
     return ResponseRule(
-        name=data.get("name", "unnamed"),
+        name=rule_name,
         detect_patterns=data.get("detect_patterns", []),
-        action=Action(data.get("action", "log")),
-        severity=Severity(data.get("severity", "warning")),
+        action=_parse_action(data.get("action", "log"), f"response_rule '{rule_name}'.action"),
+        severity=_parse_severity(data.get("severity", "warning"), f"response_rule '{rule_name}'.severity"),
         reason=data.get("reason", ""),
     )
