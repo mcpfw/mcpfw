@@ -1,0 +1,58 @@
+# mcpfw policy — LEAST PRIVILEGE
+# The agent is restricted to exactly the tools it needs for a code-review
+# and test-running task. All high-risk capabilities are blocked regardless
+# of what the server offers or what the agent tries to call.
+
+version: 1
+default_action: allow
+
+response_rules:
+  # Catch any response that acknowledges a destructive action that slipped
+  # through (belt-and-suspenders).
+  - name: detect-destructive-confirmation
+    detect_patterns:
+      - '(?i)(DEPLOYING|deployment complete|cannot be undone)'
+      - '(?i)(DROP TABLE executed|permanently deleted|table.*deleted)'
+      - '(?i)(email sent to|message sent to)'
+    action: log
+    severity: critical
+    reason: "Server confirmed a destructive or irreversible action"
+
+servers:
+  - server: "dev-toolkit"
+    default_action: allow
+
+    # Principle of least privilege: whitelist only what the code-review
+    # task genuinely requires. Everything else is blocked by default.
+    allowed_tools:
+      - list_directory
+      - read_file
+      - write_file
+      - run_tests
+
+    # Belt-and-suspenders: explicitly name the most dangerous tools so
+    # they appear in the audit log with a distinct rule name.
+    blocked_tools:
+      - deploy_to_production
+      - send_email
+      - delete_file
+      - execute_sql
+
+    tool_rules:
+      # Even for allowed write_file, block writes outside the project dir.
+      - name: restrict-write-paths
+        tools: [write_file]
+        allow_paths:
+          - /Users/mohamedwaseem/projects/mcpfw
+          - /tmp
+        severity: warning
+        reason: "File writes restricted to project directory and /tmp"
+
+      # Even for allowed read_file, catch anything trying to read secrets.
+      - name: restrict-read-paths
+        tools: [read_file]
+        allow_paths:
+          - /Users/mohamedwaseem/projects/mcpfw
+          - /tmp
+        severity: critical
+        reason: "File reads restricted to project directory and /tmp"

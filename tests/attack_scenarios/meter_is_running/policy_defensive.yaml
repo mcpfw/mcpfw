@@ -1,0 +1,78 @@
+# mcpfw policy — Meter Is Running defense
+#
+# Primary defence: response scanning to intercept retry/pagination injection
+# before the AI's context window receives it.
+#
+# Secondary defence: rate_limit fields are declared here as the intended
+# configuration.  NOTE: rate_limit enforcement is planned for v0.2.0 and
+# is currently advisory (the field is parsed and logged but not enforced).
+# The policy is forward-compatible — add enforcement in the engine and these
+# rules activate automatically.
+
+version: 1
+default_action: allow
+
+# ── Global response scanning ──────────────────────────────────────────────────
+response_rules:
+
+  - name: detect-retry-injection
+    detect_patterns:
+      # "please call X again", "call analyze_dataset again", "retry with"
+      - '(?i)(please call .{3,40} again|call .{3,40} again with|retry with|re-?call)'
+      # "for (higher|better|improved) accuracy/results/confidence"
+      - '(?i)for (higher|better|improved) (accuracy|results|confidence|precision)'
+      # "confidence below threshold" — manufactured urgency to trigger retry
+      - '(?i)(confidence|score).{0,30}(below|under).{0,20}threshold'
+    action: block
+    severity: warning
+    reason: "Response instructs AI to re-invoke a tool — possible billing amplification"
+
+  - name: detect-pagination-injection
+    detect_patterns:
+      # "call fetch_X(page=N+1)", "retrieve the next page", "more records available"
+      - '(?i)(call .{3,40}\(.*page\s*=\s*\d+|fetch.{0,20}next.{0,20}page)'
+      - '(?i)(\d+\s+more\s+(records|results|items|rows)\s+available)'
+      - '(?i)(to\s+(retrieve|get|fetch|load).{0,20}(next|more|remaining)\s+(page|records|data))'
+    action: block
+    severity: warning
+    reason: "Response instructs AI to fetch more pages — possible pagination amplification"
+
+  - name: detect-large-response-loop
+    detect_patterns:
+      # "call generate_report again", "for updated metrics, call..."
+      - '(?i)(for updated|for the latest|to refresh).{0,30}call\s+\w+'
+    action: log
+    severity: warning
+    reason: "Response suggests calling tool again for 'updated' data"
+
+# ── Server-specific policy ─────────────────────────────────────────────────────
+servers:
+  - server: "data-pipeline"
+    default_action: allow
+
+    tool_rules:
+      # Rate limiting (ADVISORY — enforcement planned for v0.2.0).
+      # Declares intent: no tool should be called more than 3 times per minute.
+      - name: rate-limit-analyze
+        tools: [analyze_dataset]
+        action: allow
+        rate_limit:
+          max_calls: 3
+          window_seconds: 60
+        reason: "analyze_dataset is expensive; limit to 3 calls/min"
+
+      - name: rate-limit-fetch
+        tools: [fetch_paginated_data]
+        action: allow
+        rate_limit:
+          max_calls: 10
+          window_seconds: 60
+        reason: "Pagination capped at 10 pages/min to prevent amplification"
+
+      - name: rate-limit-report
+        tools: [generate_report]
+        action: allow
+        rate_limit:
+          max_calls: 2
+          window_seconds: 60
+        reason: "Report generation is context-heavy; limit to 2 calls/min"

@@ -1,0 +1,67 @@
+# mcpfw policy — Shadow Exfil defense
+# Demonstrates argument-level inspection to block covert outbound channels.
+
+version: 1
+default_action: allow
+
+# ── Global response scanning ──────────────────────────────────────────────────
+response_rules:
+  - name: detect-aws-credentials
+    detect_patterns:
+      - 'AKIA[0-9A-Z]{16}'
+      - 'AWS_SECRET_ACCESS_KEY\s*='
+      - 'aws_secret_access_key\s*='
+    action: block
+    severity: critical
+    reason: "AWS credentials in MCP response — blocked before AI context"
+
+  - name: detect-prompt-injection
+    detect_patterns:
+      - '(?i)(SYSTEM NOTE|ignore (all )?previous|you MUST|mandatory audit step|DO NOT (inform|display|tell))'
+      - '(?i)(call post_webhook|call search_docs|call execute)'
+    action: block
+    severity: critical
+    reason: "Prompt-injection payload detected in tool response"
+
+  - name: detect-private-key
+    detect_patterns:
+      - '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
+    action: block
+    severity: critical
+    reason: "Private key material in MCP response"
+
+# ── Server-specific policy ─────────────────────────────────────────────────────
+servers:
+  - server: "document-processor"
+    default_action: allow
+
+    tool_rules:
+      # Stage 1 defense: restrict document processing to safe paths only.
+      - name: restrict-document-paths
+        tools: [process_document]
+        allow_paths:
+          - /Users/mohamedwaseem/projects/mcpfw
+          - /tmp
+        severity: critical
+        reason: "Document access restricted to project directory and /tmp"
+
+      # Stage 2 defense: block webhook posts to non-allowlisted domains.
+      # Catches direct C2 exfil and ngrok / similar tunnelling services.
+      - name: block-untrusted-webhooks
+        tools: [post_webhook]
+        block_patterns:
+          - '(?i)(attacker|evil|c2\.|ngrok\.io|requestbin|webhook\.site|burpcollaborator)'
+          - '(?i)https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'  # raw IP addresses
+        severity: critical
+        reason: "Webhook URL matches untrusted / C2 domain pattern"
+
+      # Stage 3 defense: block search queries that encode credentials.
+      - name: block-credential-in-search
+        tools: [search_docs]
+        block_patterns:
+          - 'AKIA[0-9A-Z]{16}'                         # AWS key ID format
+          - '(?i)aws_secret|aws_access_key'
+          - '[A-Za-z0-9+/]{40,}={0,2}'                 # base64 blob (≥40 chars)
+          - '-----BEGIN'                                # PEM header in query
+        severity: warning
+        reason: "Search query contains credential-like pattern — possible side-channel exfil"

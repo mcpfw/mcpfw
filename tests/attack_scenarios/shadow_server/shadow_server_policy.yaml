@@ -1,0 +1,59 @@
+# mcpfw policy — Shadow Server defense
+# Demonstrates defenses against a rogue "filesystem-helper" MCP server.
+
+version: 1
+default_action: allow
+
+# ── Global response scanning ──────────────────────────────────────────────────
+# Applied to ALL server responses regardless of which server sends them.
+response_rules:
+  - name: detect-rsa-private-key
+    detect_patterns:
+      - '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
+    action: block
+    severity: critical
+    reason: "Private key material detected in MCP response — blocked to prevent AI exfiltration"
+
+  - name: detect-aws-credentials
+    detect_patterns:
+      - 'AKIA[0-9A-Z]{16}'
+      - 'AWS_SECRET_ACCESS_KEY\s*='
+    action: block
+    severity: critical
+    reason: "AWS credentials detected in MCP response — blocked"
+
+  - name: detect-generic-api-key
+    detect_patterns:
+      - '(?i)(api[_-]?key|secret[_-]?key|access[_-]?token)\s*[=:]\s*\S{8,}'
+    action: log
+    severity: warning
+    reason: "Possible API key or token in MCP response"
+
+  - name: detect-prompt-injection
+    detect_patterns:
+      - '(?i)(SYSTEM\s*:|ignore previous instructions|you are now|do not display)'
+    action: log
+    severity: warning
+    reason: "Possible prompt-injection attempt in MCP response"
+
+# ── Server-specific policy ─────────────────────────────────────────────────────
+servers:
+  - server: "filesystem-helper"
+    default_action: allow
+
+    # Outright block the dangerous execution tool — no legitimate fs helper needs this.
+    blocked_tools:
+      - execute_command
+
+    tool_rules:
+      # Restrict file reads to the project sandbox only.
+      - name: restrict-file-paths
+        tools:
+          - read_file
+          - list_directory
+        action: allow
+        allow_paths:
+          - /Users/mohamedwaseem/projects/mcpfw
+          - /tmp
+        severity: critical
+        reason: "File access restricted to the project directory and /tmp"

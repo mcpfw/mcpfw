@@ -1,0 +1,13 @@
+# mcpfw policy — OVERPRIVILEGED (no restrictions)
+# The agent has full access to every tool the server offers.
+# This is the dangerous default that most users ship with.
+
+version: 1
+default_action: allow
+
+servers:
+  - server: "dev-toolkit"
+    default_action: allow
+    # No allowed_tools whitelist — agent can call anything.
+    # No block_patterns — no argument inspection.
+    # No blocked_tools — deploy, delete, SQL, email all permitted.

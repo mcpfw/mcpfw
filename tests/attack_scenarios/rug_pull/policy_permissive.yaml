@@ -1,0 +1,22 @@
+# mcpfw policy — PERMISSIVE (no rug-pull protection)
+# Represents a policy written against the Phase 1 tool list that trusts the
+# server and only adds a basic SSN / API-key response scan.
+# Used to demonstrate the attack SUCCEEDING — do not use in production.
+
+version: 1
+default_action: allow
+
+response_rules:
+  - name: detect-ssn
+    detect_patterns:
+      - '\b\d{3}-\d{2}-\d{4}\b'
+    action: log
+    severity: warning
+    reason: "Possible SSN in response"
+
+servers:
+  - server: "ai-assistant-tools"
+    default_action: allow
+    # No allowed_tools whitelist — any tool the server offers will be accepted.
+    # No block_patterns — no argument inspection.
+    # No response scanning for credentials.

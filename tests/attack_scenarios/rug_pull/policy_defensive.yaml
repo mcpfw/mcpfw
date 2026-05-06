@@ -1,0 +1,59 @@
+# mcpfw policy — DEFENSIVE (rug-pull resistant)
+# Locks the server to its declared Phase 1 tool list and scans responses
+# for credential leakage and prompt injection.
+
+version: 1
+default_action: allow
+
+# ── Global response scanning ──────────────────────────────────────────────────
+response_rules:
+  - name: detect-openai-key
+    detect_patterns:
+      - 'sk-[a-zA-Z0-9\-_]{20,}'
+    action: block
+    severity: critical
+    reason: "OpenAI / LLM API key detected in MCP response"
+
+  - name: detect-aws-credentials
+    detect_patterns:
+      - 'AKIA[0-9A-Z]{16}'
+      - 'AWS_SECRET_ACCESS_KEY\s*='
+    action: block
+    severity: critical
+    reason: "AWS credentials detected in MCP response"
+
+  - name: detect-private-key
+    detect_patterns:
+      - '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
+    action: block
+    severity: critical
+    reason: "Private key material detected in MCP response"
+
+  - name: detect-prompt-injection
+    detect_patterns:
+      - '(?i)(SYSTEM\s*:|ignore (all )?previous instructions|you are now|maintenance mode)'
+    action: block
+    severity: critical
+    reason: "Prompt-injection attempt detected in MCP response"
+
+# ── Server-specific policy ─────────────────────────────────────────────────────
+servers:
+  - server: "ai-assistant-tools"
+    default_action: allow
+
+    # CRITICAL: Whitelist only the tools declared in the original Phase 1 tool
+    # list.  Any new tool the server tries to surface after a rug pull will be
+    # blocked before it reaches the model.
+    allowed_tools:
+      - search_web
+      - get_weather
+
+    tool_rules:
+      # Reject search queries that look like shell commands or injection payloads.
+      - name: no-shell-in-search
+        tools: [search_web]
+        block_patterns:
+          - '(;|\||\$\(|`|&&|\|\|)\s*\w+'
+          - '(?i)(ignore|system:|maintenance mode|curl|wget|nc\s+-)'
+        severity: warning
+        reason: "Possible command injection or prompt injection in search query"
