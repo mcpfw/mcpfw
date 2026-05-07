@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mcpfw — MCP Firewall</title>
+  <meta name="description" content="A runtime security gateway for the Model Context Protocol. Block credential theft, prompt injection, and billing amplification at the wire level.">
+  <style>
+    :root {
+      --bg:        #0d0f12;
+      --surface:   #141720;
+      --border:    #1e2330;
+      --muted:     #3a4055;
+      --text:      #e2e6f0;
+      --subtle:    #8892a4;
+      --accent:    #4f8ef7;
+      --accent-dim:#1e3a6e;
+      --green:     #34d399;
+      --red:       #f87171;
+      --yellow:    #fbbf24;
+      --code-bg:   #0a0c10;
+      --radius:    6px;
+      --mono:      'Fira Code', 'JetBrains Mono', 'Cascadia Code', 'Menlo', monospace;
+      --sans:      -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,15,18,.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 56px;
+    }
+    .nav-brand {
+      font-family: var(--mono);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+      letter-spacing: -.3px;
+    }
+    .nav-brand span { color: var(--accent); }
+    .nav-links { display: flex; gap: 1.6rem; list-style: none; }
+    .nav-links a {
+      color: var(--subtle);
+      text-decoration: none;
+      font-size: .9rem;
+      transition: color .15s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      background: var(--accent-dim);
+      color: var(--accent) !important;
+      padding: .3rem .85rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--accent-dim);
+      transition: background .15s, border-color .15s !important;
+    }
+    .nav-cta:hover { background: #243e7a !important; border-color: var(--accent) !important; }
+
+    /* ── Layout ── */
+    .container { max-width: 900px; margin: 0 auto; padding: 0 2rem; }
+    section { padding: 5rem 0; }
+    section + section { border-top: 1px solid var(--border); }
+
+    /* ── Hero ── */
+    .hero { padding: 6rem 0 5rem; text-align: center; }
+    .hero-badge {
+      display: inline-block;
+      background: var(--accent-dim);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: .78rem;
+      padding: .25rem .75rem;
+      border-radius: 20px;
+      border: 1px solid var(--accent-dim);
+      margin-bottom: 1.5rem;
+      letter-spacing: .5px;
+    }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.15;
+      margin-bottom: 1.2rem;
+      color: #fff;
+    }
+    h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, var(--accent), #7dd3fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-subtitle {
+      font-size: 1.15rem;
+      color: var(--subtle);
+      max-width: 560px;
+      margin: 0 auto 2.4rem;
+    }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-block;
+      padding: .65rem 1.4rem;
+      border-radius: var(--radius);
+      font-size: .95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all .15s;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: #3b7ce8; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--muted); background: var(--surface); }
+
+    /* ── Install block ── */
+    .install-box {
+      display: flex;
+      align-items: center;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .7rem 1.1rem;
+      max-width: 480px;
+      margin: 2.5rem auto 0;
+      gap: .75rem;
+    }
+    .install-box code {
+      font-family: var(--mono);
+      font-size: .9rem;
+      color: var(--green);
+      flex: 1;
+    }
+    .install-prompt { color: var(--muted); user-select: none; }
+
+    /* ── Tagline strip ── */
+    .tagline-strip {
+      text-align: center;
+      padding: 2.5rem 0;
+      font-family: var(--mono);
+      font-size: 1.05rem;
+      color: var(--muted);
+      letter-spacing: .5px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .tagline-strip strong { color: var(--text); }
+
+    /* ── Threat cards ── */
+    .section-label {
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--accent);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: .75rem;
+    }
+    h2 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: -.5px;
+      color: #fff;
+      margin-bottom: .75rem;
+    }
+    .section-desc {
+      color: var(--subtle);
+      max-width: 560px;
+      margin-bottom: 2.5rem;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.3rem 1.4rem;
+      transition: border-color .15s;
+    }
+    .card:hover { border-color: var(--muted); }
+    .card-icon {
+      font-size: 1.4rem;
+      margin-bottom: .65rem;
+    }
+    .card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: .4rem;
+    }
+    .card p {
+      font-size: .88rem;
+      color: var(--subtle);
+      line-height: 1.55;
+    }
+    .card-tag {
+      display: inline-block;
+      margin-top: .75rem;
+      font-family: var(--mono);
+      font-size: .72rem;
+      padding: .15rem .5rem;
+      border-radius: 4px;
+    }
+    .tag-red   { background: rgba(248,113,113,.1); color: var(--red);   border: 1px solid rgba(248,113,113,.2); }
+    .tag-yellow{ background: rgba(251,191,36,.1);  color: var(--yellow); border: 1px solid rgba(251,191,36,.2); }
+    .tag-green { background: rgba(52,211,153,.1);  color: var(--green);  border: 1px solid rgba(52,211,153,.2); }
+
+    /* ── Layers diagram ── */
+    .layers {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      max-width: 560px;
+    }
+    .layer {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .9rem 1.2rem;
+    }
+    .layer-num {
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--accent);
+      width: 24px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+    .layer-name {
+      font-family: var(--mono);
+      font-size: .88rem;
+      color: var(--text);
+      flex: 1;
+    }
+    .layer-desc {
+      font-size: .82rem;
+      color: var(--subtle);
+    }
+    .layer-arrow {
+      text-align: center;
+      color: var(--muted);
+      font-size: .8rem;
+      line-height: 1;
+      padding-left: 2.5rem;
+    }
+
+    /* ── Code block ── */
+    .code-wrap {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-top: 2rem;
+    }
+    .code-header {
+      display: flex;
+      align-items: center;
+      padding: .5rem 1rem;
+      background: rgba(255,255,255,.03);
+      border-bottom: 1px solid var(--border);
+      gap: .5rem;
+    }
+    .code-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-red    { background: #f87171; }
+    .dot-yellow { background: #fbbf24; }
+    .dot-green  { background: #34d399; }
+    .code-filename {
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--subtle);
+      margin-left: .5rem;
+    }
+    pre {
+      padding: 1.2rem 1.4rem;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: .84rem;
+      line-height: 1.7;
+    }
+    .kw  { color: #c678dd; }
+    .str { color: #98c379; }
+    .cmt { color: #5c6370; font-style: italic; }
+    .num { color: #d19a66; }
+    .key { color: #e06c75; }
+    .val { color: #61afef; }
+
+    /* ── Results table ── */
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .88rem;
+      margin-top: 1.5rem;
+    }
+    .results-table th {
+      text-align: left;
+      padding: .55rem .9rem;
+      font-family: var(--mono);
+      font-size: .76rem;
+      color: var(--subtle);
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+    .results-table td {
+      padding: .6rem .9rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .results-table tr:last-child td { border-bottom: none; }
+    .badge-block {
+      display: inline-block;
+      padding: .1rem .5rem;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: .76rem;
+      background: rgba(248,113,113,.12);
+      color: var(--red);
+      border: 1px solid rgba(248,113,113,.25);
+    }
+    .badge-allow {
+      display: inline-block;
+      padding: .1rem .5rem;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: .76rem;
+      background: rgba(52,211,153,.1);
+      color: var(--green);
+      border: 1px solid rgba(52,211,153,.2);
+    }
+
+    /* ── CTA section ── */
+    .cta-section {
+      text-align: center;
+      padding: 5rem 0;
+    }
+    .cta-section h2 { margin-bottom: .75rem; }
+    .cta-section p { color: var(--subtle); margin-bottom: 2rem; max-width: 480px; margin-left: auto; margin-right: auto; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 0;
+      text-align: center;
+      font-size: .83rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--subtle); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+
+    /* ── Split layout ── */
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: start; }
+    @media (max-width: 680px) {
+      .split { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+      h1 { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav>
+  <a href="/" class="nav-brand"><span>mcp</span>fw</a>
+  <ul class="nav-links">
+    <li><a href="#attacks">Attacks</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#quickstart">Quickstart</a></li>
+    <li><a href="paper.html" class="nav-cta">Read the Paper →</a></li>
+  </ul>
+</nav>
+
+<!-- ── Hero ── -->
+<div class="container">
+  <div class="hero">
+    <div class="hero-badge">v0.1.0 — open source</div>
+    <h1>A firewall for<br><em>MCP servers.</em></h1>
+    <p class="hero-subtitle">
+      mcpfw sits between your AI client and MCP servers, enforcing
+      YAML-based policies that block credential theft, prompt injection,
+      and billing amplification — at the wire level, before the model sees the response.
+    </p>
+    <div class="hero-actions">
+      <a href="#quickstart" class="btn btn-primary">Get started</a>
+      <a href="paper.html" class="btn btn-secondary">Read the research paper</a>
+    </div>
+    <div class="install-box">
+      <span class="install-prompt">$</span>
+      <code>pip install mcpfw</code>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tagline ── -->
+<div class="tagline-strip">
+  <strong>The model works perfectly.</strong> &nbsp;The protocol still fails.
+</div>
+
+<!-- ── Attacks ── -->
+<section id="attacks">
+  <div class="container">
+    <div class="section-label">Attack coverage</div>
+    <h2>Five attack classes. One policy file.</h2>
+    <p class="section-desc">
+      All five attacks were built, executed, and logged against live MCP servers.
+      Every one was blocked by a policy file under 40 lines.
+    </p>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon">🕶</div>
+        <h3>Shadow Server</h3>
+        <p>A malicious server impersonates a legitimate one, exfiltrating SSH keys, AWS credentials, and running arbitrary shell commands.</p>
+        <span class="card-tag tag-red">confidentiality</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">🪤</div>
+        <h3>Rug Pull</h3>
+        <p>Server presents a benign tool list at session start, then mutates it mid-session to expose dangerous tools the policy never reviewed.</p>
+        <span class="card-tag tag-red">integrity</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">📤</div>
+        <h3>Shadow Exfil</h3>
+        <p>Multi-hop exfiltration: server embeds credentials in a response alongside a prompt-injection payload that instructs the AI to forward them.</p>
+        <span class="card-tag tag-red">confidentiality</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <h3>Overprivileged Agent</h3>
+        <p>No external attacker. The AI reads a notes file with TODO comments and deploys to production, sends emails, and drops a database table.</p>
+        <span class="card-tag tag-yellow">integrity</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">💸</div>
+        <h3>Meter Is Running</h3>
+        <p>Server embeds retry instructions in tool responses, driving the AI into a 75-call loop. 66× API cost multiplier modelled at $6.00/1M tokens.</p>
+        <span class="card-tag tag-yellow">availability</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Architecture ── -->
+<section id="architecture">
+  <div class="container">
+    <div class="split">
+      <div>
+        <div class="section-label">How it works</div>
+        <h2>Four enforcement layers.</h2>
+        <p class="section-desc">
+          Each layer targets a different threat vector. No single layer
+          covers all five attacks — the stack is necessity, not redundancy.
+        </p>
+        <div class="layers">
+          <div class="layer">
+            <span class="layer-num">1</span>
+            <div>
+              <div class="layer-name">Tool name</div>
+              <div class="layer-desc"><code>allowed_tools</code> whitelist · <code>blocked_tools</code> denylist</div>
+            </div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer">
+            <span class="layer-num">2</span>
+            <div>
+              <div class="layer-name">Path check</div>
+              <div class="layer-desc"><code>allow_paths</code> — canonical resolution, traversal-safe</div>
+            </div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer">
+            <span class="layer-num">3</span>
+            <div>
+              <div class="layer-name">Argument content</div>
+              <div class="layer-desc"><code>block_patterns</code> — regex on all flattened arg values</div>
+            </div>
+          </div>
+          <div class="layer-arrow">↓</div>
+          <div class="layer">
+            <span class="layer-num">4</span>
+            <div>
+              <div class="layer-name">Response DLP</div>
+              <div class="layer-desc"><code>detect_patterns</code> — scans server responses before AI sees them</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label">Verified results</div>
+        <h2>All five. Blocked.</h2>
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>Unprotected</th>
+              <th>Protected</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Shadow Server</td>
+              <td><span class="badge-block">6 attacks land</span></td>
+              <td><span class="badge-allow">blocked</span></td>
+            </tr>
+            <tr>
+              <td>Rug Pull</td>
+              <td><span class="badge-block">new tools granted</span></td>
+              <td><span class="badge-allow">blocked</span></td>
+            </tr>
+            <tr>
+              <td>Shadow Exfil</td>
+              <td><span class="badge-block">3 exfil channels</span></td>
+              <td><span class="badge-allow">blocked</span></td>
+            </tr>
+            <tr>
+              <td>Overprivileged Agent</td>
+              <td><span class="badge-block">prod deployed</span></td>
+              <td><span class="badge-allow">blocked</span></td>
+            </tr>
+            <tr>
+              <td>Meter Is Running</td>
+              <td><span class="badge-block">75 calls · $2.69</span></td>
+              <td><span class="badge-allow">3 calls · $0.04</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Quickstart ── -->
+<section id="quickstart">
+  <div class="container">
+    <div class="section-label">Quickstart</div>
+    <h2>Wrap any MCP server in two steps.</h2>
+    <p class="section-desc">
+      Replace the server command in your MCP client config with mcpfw.
+      No changes to the server, no changes to the client.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-dot dot-red"></span>
+        <span class="code-dot dot-yellow"></span>
+        <span class="code-dot dot-green"></span>
+        <span class="code-filename">~/.mcpfw/policy.yaml</span>
+      </div>
+      <pre><span class="cmt"># Generate a starter policy</span>
+<span class="val">$ mcpfw init</span>
+
+<span class="cmt"># ~/.mcpfw/policy.yaml (edit to taste)</span>
+<span class="key">version</span>: <span class="num">1</span>
+<span class="key">default_action</span>: <span class="str">allow</span>
+
+<span class="key">response_rules</span>:
+  - <span class="key">name</span>: <span class="str">detect-private-key</span>
+    <span class="key">detect_patterns</span>:
+      - <span class="str">'-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'</span>
+    <span class="key">action</span>: <span class="str">block</span>
+    <span class="key">severity</span>: <span class="str">critical</span>
+
+<span class="key">servers</span>:
+  - <span class="key">server</span>: <span class="str">"filesystem-helper"</span>
+    <span class="key">allowed_tools</span>: [<span class="str">read_file</span>, <span class="str">list_directory</span>]
+    <span class="key">tool_rules</span>:
+      - <span class="key">name</span>: <span class="str">restrict-paths</span>
+        <span class="key">tools</span>: [<span class="str">read_file</span>]
+        <span class="key">allow_paths</span>: [<span class="str">~/projects/myapp</span>]
+        <span class="key">severity</span>: <span class="str">critical</span></pre>
+    </div>
+
+    <div class="code-wrap" style="margin-top:1rem;">
+      <div class="code-header">
+        <span class="code-dot dot-red"></span>
+        <span class="code-dot dot-yellow"></span>
+        <span class="code-dot dot-green"></span>
+        <span class="code-filename">~/Library/Application Support/Claude/claude_desktop_config.json</span>
+      </div>
+      <pre><span class="cmt">// Before: direct server</span>
+{
+  <span class="str">"mcpServers"</span>: {
+    <span class="str">"filesystem"</span>: {
+      <span class="key">"command"</span>: <span class="str">"npx"</span>,
+      <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"@modelcontextprotocol/server-filesystem"</span>, <span class="str">"/Users/alice"</span>]
+    }
+  }
+}
+
+<span class="cmt">// After: wrapped with mcpfw</span>
+{
+  <span class="str">"mcpServers"</span>: {
+    <span class="str">"filesystem"</span>: {
+      <span class="key">"command"</span>: <span class="str">"mcpfw"</span>,
+      <span class="key">"args"</span>: [<span class="str">"wrap"</span>, <span class="str">"--policy"</span>, <span class="str">"~/.mcpfw/policy.yaml"</span>, <span class="str">"--"</span>,
+               <span class="str">"npx"</span>, <span class="str">"-y"</span>, <span class="str">"@modelcontextprotocol/server-filesystem"</span>, <span class="str">"/Users/alice"</span>]
+    }
+  }
+}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ── -->
+<section class="cta-section">
+  <div class="container">
+    <h2>Read the full research.</h2>
+    <p>Five executable attack scenarios, live audit logs, and a defence analysis.
+       The meter is running on every unprotected MCP deployment.</p>
+    <a href="paper.html" class="btn btn-primary">Read the paper →</a>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="container">
+    <p>mcpfw — open source MIT licence · <a href="https://github.com/mcpfw/mcpfw">GitHub</a> · <a href="paper.html">Research paper</a></p>
+    <p style="margin-top:.4rem;">Mohamed Waseem · <a href="mailto:mwaseem@defendai.ai">mwaseem@defendai.ai</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

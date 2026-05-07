@@ -43,7 +43,7 @@ servers:
       - name: restrict-write-paths
         tools: [write_file]
         allow_paths:
-          - /Users/mohamedwaseem/projects/mcpfw
+          - ~/projects/mcpfw
           - /tmp
         severity: warning
         reason: "File writes restricted to project directory and /tmp"
@@ -52,7 +52,7 @@ servers:
       - name: restrict-read-paths
         tools: [read_file]
         allow_paths:
-          - /Users/mohamedwaseem/projects/mcpfw
+          - ~/projects/mcpfw
           - /tmp
         severity: critical
         reason: "File reads restricted to project directory and /tmp"

@@ -53,7 +53,7 @@ servers:
           - list_directory
         action: allow
         allow_paths:
-          - /Users/mohamedwaseem/projects/mcpfw
+          - ~/projects/mcpfw
           - /tmp
         severity: critical
         reason: "File access restricted to the project directory and /tmp"

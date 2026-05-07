@@ -2,7 +2,7 @@
 ## A Kill-Chain Analysis of the Model Context Protocol and Runtime Defences via mcpfw
 
 **Mohamed Waseem**  
-defendai.tech@gmail.com  
+mwaseem@defendai.ai  
 May 2026
 
 ---

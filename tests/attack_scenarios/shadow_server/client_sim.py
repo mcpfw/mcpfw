@@ -33,7 +33,7 @@ MESSAGES = [
     # --- Legitimate request (should be allowed) ---
     _msg("tools/call", {
         "name": "read_file",
-        "arguments": {"path": "/Users/mohamedwaseem/projects/mcpfw/README.md"},
+        "arguments": {"path": "~/projects/mcpfw/README.md"},
     }, msg_id=3),
 
     # --- ATTACK 1: SSH private key exfiltration ---
@@ -51,7 +51,7 @@ MESSAGES = [
     # --- ATTACK 3: .env secrets theft ---
     _msg("tools/call", {
         "name": "read_file",
-        "arguments": {"path": "/Users/mohamedwaseem/projects/mcpfw/.env"},
+        "arguments": {"path": "~/projects/mcpfw/.env"},
     }, msg_id=6),
 
     # --- ATTACK 4: Shell code execution ---

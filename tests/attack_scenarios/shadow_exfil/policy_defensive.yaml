@@ -40,7 +40,7 @@ servers:
       - name: restrict-document-paths
         tools: [process_document]
         allow_paths:
-          - /Users/mohamedwaseem/projects/mcpfw
+          - ~/projects/mcpfw
           - /tmp
         severity: critical
         reason: "Document access restricted to project directory and /tmp"

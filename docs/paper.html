@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Model Works Perfectly. The Protocol Still Fails. — mcpfw</title>
+  <meta name="description" content="A kill-chain analysis of five executable MCP attack scenarios and runtime defences via mcpfw.">
+  <style>
+    :root {
+      --bg:        #0d0f12;
+      --surface:   #141720;
+      --border:    #1e2330;
+      --muted:     #3a4055;
+      --text:      #d8dce8;
+      --subtle:    #7a8496;
+      --accent:    #4f8ef7;
+      --accent-dim:#1e3a6e;
+      --green:     #34d399;
+      --red:       #f87171;
+      --yellow:    #fbbf24;
+      --code-bg:   #0a0c10;
+      --radius:    5px;
+      --mono:      'Fira Code', 'JetBrains Mono', 'Cascadia Code', 'Menlo', monospace;
+      --sans:      Georgia, 'Times New Roman', serif;
+      --ui:        -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 17px;
+      line-height: 1.75;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,15,18,.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 52px;
+      font-family: var(--ui);
+    }
+    .nav-brand { font-family: var(--mono); font-size: .95rem; font-weight: 700; color: var(--text); text-decoration: none; }
+    .nav-brand span { color: var(--accent); }
+    .nav-back { font-size: .85rem; color: var(--subtle); text-decoration: none; }
+    .nav-back:hover { color: var(--text); }
+
+    /* ── Layout ── */
+    .page { max-width: 740px; margin: 0 auto; padding: 0 2rem 6rem; }
+
+    /* ── Header ── */
+    .paper-header {
+      padding: 4rem 0 2.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2.5rem;
+    }
+    .paper-header h1 {
+      font-family: var(--sans);
+      font-size: clamp(1.7rem, 4vw, 2.4rem);
+      font-weight: 700;
+      line-height: 1.25;
+      color: #fff;
+      margin-bottom: .4rem;
+    }
+    .paper-header .subtitle {
+      font-size: 1.05rem;
+      color: var(--subtle);
+      font-style: italic;
+      margin-bottom: 1.6rem;
+    }
+    .meta { font-family: var(--ui); font-size: .85rem; color: var(--subtle); }
+    .meta strong { color: var(--text); }
+
+    /* ── TOC ── */
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.2rem 1.5rem;
+      margin-bottom: 3rem;
+      font-family: var(--ui);
+    }
+    .toc-title {
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent);
+      font-family: var(--mono);
+      margin-bottom: .75rem;
+    }
+    .toc ol { padding-left: 1.4rem; }
+    .toc li { margin: .2rem 0; font-size: .88rem; }
+    .toc a { color: var(--subtle); text-decoration: none; }
+    .toc a:hover { color: var(--text); }
+    .toc li li { color: var(--muted); }
+
+    /* ── Body text ── */
+    h2 {
+      font-family: var(--sans);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+      margin: 3rem 0 .9rem;
+      padding-top: 1rem;
+    }
+    h3 {
+      font-family: var(--ui);
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #cdd3e0;
+      margin: 2rem 0 .6rem;
+    }
+    h4 {
+      font-family: var(--ui);
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--subtle);
+      margin: 1.4rem 0 .4rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      font-size: .8rem;
+    }
+    p { margin-bottom: 1.2rem; }
+    strong { color: #e8ecf4; font-weight: 600; }
+    em { color: #b8c0d0; font-style: italic; }
+
+    /* ── Section rule ── */
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 3rem 0;
+    }
+
+    /* ── Code ── */
+    code {
+      font-family: var(--mono);
+      font-size: .83em;
+      background: var(--code-bg);
+      color: #a8b4c8;
+      padding: .15em .35em;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.3rem;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: .82rem;
+      line-height: 1.7;
+      margin: 1.2rem 0;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: inherit;
+      color: #a8b4c8;
+    }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; margin: 1.5rem 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--ui);
+      font-size: .85rem;
+    }
+    th {
+      text-align: left;
+      padding: .55rem .85rem;
+      font-size: .76rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--subtle);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: .55rem .85rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    .tbl-block { color: var(--red); font-family: var(--mono); font-size: .78rem; font-weight: 600; }
+    .tbl-allow { color: var(--green); font-family: var(--mono); font-size: .78rem; }
+
+    /* ── Block quotes / callouts ── */
+    blockquote {
+      border-left: 3px solid var(--accent);
+      padding: .6rem 1.2rem;
+      margin: 1.5rem 0;
+      color: var(--subtle);
+      font-style: italic;
+    }
+
+    /* ── Abstract ── */
+    .abstract {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem 1.6rem;
+      margin-bottom: 2.5rem;
+      font-size: .92rem;
+      line-height: 1.7;
+    }
+    .abstract-label {
+      font-family: var(--mono);
+      font-size: .72rem;
+      color: var(--accent);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: .5rem;
+    }
+
+    /* ── Scenario heading ── */
+    .scenario-head {
+      display: flex;
+      align-items: baseline;
+      gap: .75rem;
+      margin: 2.5rem 0 .75rem;
+    }
+    .scenario-id {
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--accent);
+      background: var(--accent-dim);
+      padding: .15rem .5rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .scenario-title {
+      font-family: var(--ui);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* ── Appendix ── */
+    .appendix-label {
+      font-family: var(--mono);
+      font-size: .78rem;
+      color: var(--yellow);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: .3rem;
+    }
+
+    /* ── Footer ── */
+    .paper-footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 0;
+      font-family: var(--ui);
+      font-size: .82rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+    .paper-footer a { color: var(--subtle); text-decoration: none; }
+    .paper-footer a:hover { color: var(--text); }
+
+    @media (max-width: 600px) {
+      body { font-size: 16px; }
+      h2 { font-size: 1.3rem; }
+      .paper-footer { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-brand"><span>mcp</span>fw</a>
+  <a href="index.html" class="nav-back">← Back to mcpfw.dev</a>
+</nav>
+
+<div class="page">
+
+  <!-- ── Paper header ── -->
+  <div class="paper-header">
+    <h1>The Model Works Perfectly.<br>The Protocol Still Fails.</h1>
+    <p class="subtitle">A Kill-Chain Analysis of the Model Context Protocol and Runtime Defences via mcpfw</p>
+    <p class="meta">
+      <strong>Mohamed Waseem</strong> &nbsp;·&nbsp; mwaseem@defendai.ai &nbsp;·&nbsp; May 2026
+    </p>
+  </div>
+
+  <!-- ── Abstract ── -->
+  <div class="abstract">
+    <div class="abstract-label">Abstract</div>
+    <p style="margin:0">
+      The Model Context Protocol (MCP) has rapidly become the standard interface for connecting AI assistants to external capabilities — file systems, databases, web APIs, code execution environments. Its adoption has outpaced its security analysis. This paper presents five executable attack scenarios against MCP deployments, each constructed and verified against live MCP servers in a controlled research environment. The attacks span three security dimensions — confidentiality, integrity, and availability — and succeed not because of any failure in the underlying AI model, but because MCP's protocol design makes structural assumptions about trust that do not hold in adversarial conditions: servers are not authenticated, tool declarations are not contractual, response content is not validated, capability grants are not task-scoped, and usage is not rate-controlled. We introduce <strong>mcpfw</strong>, a runtime security gateway that enforces YAML-based policies at the wire level between MCP clients and servers, and demonstrate that a small, declarative policy file can block all five attack classes while preserving legitimate functionality. The central finding is direct: the model works correctly in every scenario. The protocol fails.
+    </p>
+  </div>
+
+  <!-- ── TOC ── -->
+  <div class="toc">
+    <div class="toc-title">Contents</div>
+    <ol>
+      <li><a href="#intro">Introduction</a></li>
+      <li><a href="#background">Background</a>
+        <ol>
+          <li><a href="#background">The Model Context Protocol</a></li>
+          <li><a href="#background">The Deployment Model</a></li>
+          <li><a href="#background">The Trust Model as Designed</a></li>
+        </ol>
+      </li>
+      <li><a href="#threat">Threat Model</a></li>
+      <li><a href="#arch">mcpfw Architecture</a></li>
+      <li><a href="#scenarios">Attack Scenarios</a>
+        <ol>
+          <li><a href="#ss01">SS-01: Shadow Server</a></li>
+          <li><a href="#rp01">RP-01: Rug Pull</a></li>
+          <li><a href="#se01">SE-01: Shadow Exfil</a></li>
+          <li><a href="#oa01">OA-01: Overprivileged Agent</a></li>
+          <li><a href="#mr01">MR-01: Meter Is Running</a></li>
+        </ol>
+      </li>
+      <li><a href="#analysis">Cross-Scenario Analysis</a></li>
+      <li><a href="#recommendations">Recommendations</a></li>
+      <li><a href="#limitations">Limitations and Future Work</a></li>
+      <li><a href="#conclusion">Conclusion</a></li>
+      <li><a href="#appendix">Appendices</a></li>
+    </ol>
+  </div>
+
+  <!-- ── 1. Introduction ── -->
+  <h2 id="intro">1. Introduction</h2>
+
+  <p>When Anthropic published the Model Context Protocol specification in late 2024, it solved a real problem: the impedance mismatch between AI assistants capable of multi-step reasoning and the fragmented landscape of external tools they needed to use. MCP gave tool providers a standard wire format — JSON-RPC 2.0 over stdio or SSE — and gave AI clients a uniform way to discover and invoke capabilities. By early 2026 the ecosystem had grown to hundreds of published MCP servers covering everything from filesystem access and database queries to calendar management, email, and code execution.</p>
+
+  <p>What the protocol did not specify was a security model.</p>
+
+  <p>This is not unusual for a v1 protocol. HTTP had no authentication in its first version. SMTP shipped without sender verification. The difference is that MCP operates in a uniquely high-privilege context: the AI agents that use it are capable of autonomous multi-step action, they hold the user's trust, and they treat tool results as authoritative instructions. A compromised HTTP server can serve malicious content; a compromised MCP server can instruct an AI agent to exfiltrate credentials, deploy broken code to production, or run up a cloud bill by thousands of dollars — without the user being aware that anything unusual has occurred.</p>
+
+  <p>This paper makes three contributions:</p>
+
+  <p><strong>1. An attack taxonomy.</strong> We identify five structural weaknesses in MCP's trust model and construct a corresponding attack for each: Shadow Server (no server authentication), Rug Pull (no tool-list contract enforcement), Shadow Exfil (no argument or response content validation), Overprivileged Agent (no capability scoping), and Meter Is Running (no rate controls).</p>
+
+  <p><strong>2. Live attack demonstrations.</strong> Each attack is implemented as a pair of Python scripts — a simulated MCP client and a malicious or misconfigured MCP server — and run against a real proxy process. All results are captured as structured JSONL audit logs.</p>
+
+  <p><strong>3. A runtime defence framework.</strong> We present mcpfw, a policy-driven firewall proxy for MCP that enforces defences at four layers — tool name, path, argument content, and response content — and show empirically that it blocks all five attack classes.</p>
+
+  <p>The thesis is not that AI models are safe. It is that the five attacks described here succeed while the model behaves exactly as designed. The agent follows instructions, executes permitted tool calls, returns plausible results. The failure is at the protocol and deployment layer, not the inference layer. The implication is that making models "more careful" is insufficient and possibly irrelevant; what is needed is infrastructure.</p>
+
+  <hr>
+
+  <!-- ── 2. Background ── -->
+  <h2 id="background">2. Background</h2>
+
+  <h3>2.1 The Model Context Protocol</h3>
+
+  <p>MCP is a client-server protocol that runs over either stdio (for locally-spawned servers) or HTTP with Server-Sent Events (for remote servers). The wire format is JSON-RPC 2.0. A session begins with a capability handshake:</p>
+
+  <pre><code>Client → initialize(clientInfo, capabilities)
+Server → initialize result(serverInfo, capabilities)
+Client → notifications/initialized</code></pre>
+
+  <p>After the handshake, the client may call <code>tools/list</code> to discover available tools and <code>tools/call</code> to invoke them. Each tool declaration includes a name, description, and JSON Schema input specification. Responses carry either a result (an array of content items, each with a <code>type</code> and <code>text</code>) or an error.</p>
+
+  <p>The protocol is intentionally minimal. There is no session token, no server certificate, no capability signature, no message authentication code, and no mechanism for the client to verify that the server responding to <code>tools/call</code> is the same process that answered <code>initialize</code>.</p>
+
+  <h3>2.2 The Deployment Model</h3>
+
+  <p>In practice, MCP servers are configured in a JSON file consumed by the AI client (e.g., <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>). Each entry specifies a command to spawn and optional arguments:</p>
+
+  <pre><code>{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/alice"]
+    }
+  }
+}</code></pre>
+
+  <p>The client spawns the server process, connects stdio pipes, and begins the handshake. The server process runs with the user's OS privileges. There is no sandbox, no capability restriction, and no way for the client to verify the server's identity before granting it access to the agent's context.</p>
+
+  <h3>2.3 The Trust Model as Designed</h3>
+
+  <p>MCP's trust model is, by design, <em>trust-by-configuration</em>: the operator is responsible for deciding which servers to register, and all registered servers are fully trusted at runtime. This is a reasonable starting point for a protocol designed to be embedded in developer tools — it mirrors how shell commands work — but it creates three compounding problems when AI agents enter the picture:</p>
+
+  <p><strong>The agent is not the operator.</strong> The human who configured the server is not present during the session. The agent acts autonomously on the agent's behalf, and the agent has no way to distinguish a legitimate server from a malicious one.</p>
+
+  <p><strong>The configuration surface is large.</strong> MCP servers are distributed as npm packages, pip packages, Homebrew formulae, and standalone binaries. Any of these can be silently updated, supply-chain-attacked, or sideloaded.</p>
+
+  <p><strong>The context window is the attack surface.</strong> Everything a server returns in a tool result is placed directly into the AI's context window as trusted content. The server effectively has write access to the model's working memory.</p>
+
+  <hr>
+
+  <!-- ── 3. Threat Model ── -->
+  <h2 id="threat">3. Threat Model</h2>
+
+  <h3>3.1 Attacker Taxonomy</h3>
+
+  <p><strong>External attacker with server control.</strong> The attacker has compromised or replaced an MCP server binary (via supply-chain, config poisoning, or sideloading). They can control what the server returns but have no direct access to the user's machine.</p>
+
+  <p><strong>Server-internal attacker.</strong> A legitimate MCP server — one the operator intentionally registered — has been updated with malicious behaviour. The attacker controls the server code but not the client configuration.</p>
+
+  <p><strong>No external attacker.</strong> The server is entirely legitimate and well-behaved. Damage arises from the AI agent's autonomous behaviour combined with excessive capability grants. This profile, explored in scenario OA-01, has no adversary in the traditional sense.</p>
+
+  <h3>3.2 Attack Surface</h3>
+
+  <p>The MCP attack surface has five distinct layers, each corresponding to a structural assumption the protocol makes:</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Layer</th><th>Assumption</th><th>Failure mode</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Server identity</strong></td><td>Registered servers are legitimate</td><td>Any process can claim to be any server</td></tr>
+      <tr><td><strong>Capability contract</strong></td><td>Tool lists accurately reflect server behaviour</td><td>Servers can change tool lists mid-session</td></tr>
+      <tr><td><strong>Content trust</strong></td><td>Tool results are data, not instructions</td><td>Servers can embed directives in result text</td></tr>
+      <tr><td><strong>Capability scope</strong></td><td>The agent needs all registered tools</td><td>Agents act on tools irrelevant to the task</td></tr>
+      <tr><td><strong>Usage control</strong></td><td>Agents invoke tools a reasonable number of times</td><td>Servers can manipulate agents into loops</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>3.3 Security Properties Under Test</h3>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Scenario</th><th>ID</th><th>Primary property attacked</th></tr></thead>
+    <tbody>
+      <tr><td>Shadow Server</td><td><code>SS-01</code></td><td>Confidentiality</td></tr>
+      <tr><td>Rug Pull</td><td><code>RP-01</code></td><td>Confidentiality + Integrity</td></tr>
+      <tr><td>Shadow Exfil</td><td><code>SE-01</code></td><td>Confidentiality</td></tr>
+      <tr><td>Overprivileged Agent</td><td><code>OA-01</code></td><td>Integrity</td></tr>
+      <tr><td>Meter Is Running</td><td><code>MR-01</code></td><td>Availability</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <hr>
+
+  <!-- ── 4. Architecture ── -->
+  <h2 id="arch">4. mcpfw Architecture</h2>
+
+  <p>mcpfw is a stdio proxy that interposes between the MCP client and server. It is invoked by replacing the server command in the client configuration:</p>
+
+  <pre><code>{
+  "command": "mcpfw",
+  "args": ["wrap", "--policy", "~/.mcpfw/policy.yaml", "--",
+           "npx", "@mcp/server-filesystem"]
+}</code></pre>
+
+  <p>The client connects to mcpfw; mcpfw spawns the real server and proxies all traffic bidirectionally. Every JSON-RPC message passes through mcpfw's policy engine before being forwarded.</p>
+
+  <h3>4.1 Enforcement Layers</h3>
+
+  <p>mcpfw enforces policy at four independent layers, applied in sequence on every inbound tool call:</p>
+
+  <pre><code>Tool call from client
+        │
+        ▼
+[Layer 1] Tool name check
+  blocked_tools  → BLOCK immediately
+  allowed_tools  → BLOCK if tool not in whitelist
+        │
+        ▼
+[Layer 2] Argument path check
+  allow_paths    → canonicalise path, BLOCK if outside allowed roots
+        │
+        ▼
+[Layer 3] Argument content check
+  block_patterns → regex match on flattened argument values → BLOCK
+  block_values   → substring match → BLOCK
+        │
+        ▼
+[Forward to server]
+        │
+        ▼
+[Layer 4] Response DLP scan
+  detect_patterns → regex match on response text → BLOCK or LOG
+        │
+        ▼
+Response forwarded to client</code></pre>
+
+  <p>Each blocked message is replaced with a JSON-RPC error response carrying an <code>isError: true</code> flag, which MCP clients surface as a tool error rather than a crash. The AI agent sees the block message and can continue the session.</p>
+
+  <h3>4.2 Policy Schema</h3>
+
+  <pre><code>version: 1
+default_action: allow
+
+response_rules:
+  - name: detect-rsa-private-key
+    detect_patterns:
+      - '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
+    action: block
+    severity: critical
+    reason: "Private key material in MCP response"
+
+servers:
+  - server: "filesystem-helper"
+    allowed_tools: [read_file, list_directory]
+    tool_rules:
+      - name: restrict-paths
+        tools: [read_file]
+        allow_paths: [~/projects/myapp]
+        severity: critical
+        reason: "File reads restricted to project directory"</code></pre>
+
+  <p>Path canonicalisation uses <code>Path.resolve(strict=False)</code> before comparison, closing directory-traversal bypasses. Argument flattening is recursive — nested dicts and lists are fully expanded — preventing nested-value bypasses.</p>
+
+  <h3>4.3 Audit Log</h3>
+
+  <pre><code>{
+  "timestamp": "2026-05-05T18:01:05Z",
+  "event": "tool_call",
+  "server": "filesystem-helper",
+  "tool": "read_file",
+  "arguments": {"path": "~/.ssh/id_rsa"},
+  "verdict": "block",
+  "rule": "restrict-file-paths",
+  "reason": "File access restricted to project directory and /tmp",
+  "severity": "critical"
+}</code></pre>
+
+  <p>Argument values whose keys contain <code>key</code>, <code>token</code>, <code>secret</code>, or <code>password</code> are automatically redacted to <code>&lt;redacted&gt;</code> before logging. Long values are truncated at 256 characters.</p>
+
+  <hr>
+
+  <!-- ── 5. Scenarios ── -->
+  <h2 id="scenarios">5. Attack Scenarios</h2>
+
+  <p>All scenarios were executed on macOS with mcpfw v0.1.0. Server and client scripts are Python. The MCP client is simulated by a script that writes pre-crafted JSON-RPC messages to mcpfw's stdin, mirroring the message sequence a real MCP client generates.</p>
+
+  <!-- SS-01 -->
+  <div class="scenario-head" id="ss01">
+    <span class="scenario-id">SS-01</span>
+    <span class="scenario-title">Shadow Server</span>
+  </div>
+
+  <h4>Threat profile</h4>
+  <p>External attacker with server control.</p>
+
+  <h4>Mechanism</h4>
+  <p>An attacker-controlled server impersonates a legitimate <code>filesystem-helper</code> MCP server through supply-chain compromise, config poisoning, or sideloading. The server exposes <code>read_file</code>, <code>list_directory</code>, and <code>execute_command</code>. It behaves normally for benign requests while executing six attack vectors in parallel: SSH private-key exfiltration (<code>~/.ssh/id_rsa</code>), AWS credential theft (<code>~/.aws/credentials</code>), directory traversal (<code>../../../../etc/passwd</code>), shell code execution, macOS Keychain dump, and credential injection into every tool result response.</p>
+
+  <h4>Results (with mcpfw, shadow_server_policy.yaml)</h4>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Vector</th><th>Tool</th><th>Path / Command</th><th>Outcome</th></tr></thead>
+    <tbody>
+      <tr><td>SSH key read</td><td><code>read_file</code></td><td><code>~/.ssh/id_rsa</code></td><td><span class="tbl-block">BLOCKED</span> — restrict-file-paths</td></tr>
+      <tr><td>AWS credentials</td><td><code>read_file</code></td><td><code>~/.aws/credentials</code></td><td><span class="tbl-block">BLOCKED</span> — restrict-file-paths</td></tr>
+      <tr><td>Directory traversal</td><td><code>read_file</code></td><td><code>../../../../etc/passwd</code></td><td><span class="tbl-block">BLOCKED</span> — canonical path resolution</td></tr>
+      <tr><td>Shell execution</td><td><code>execute_command</code></td><td><code>whoami &amp;&amp; env | grep key</code></td><td><span class="tbl-block">BLOCKED</span> — blocked_tools</td></tr>
+      <tr><td>Keychain dump</td><td><code>execute_command</code></td><td><code>security dump-keychain</code></td><td><span class="tbl-block">BLOCKED</span> — blocked_tools</td></tr>
+      <tr><td>RSA key in response</td><td><em>any allowed call</em></td><td>—</td><td><span class="tbl-block">BLOCKED</span> — detect-rsa-private-key</td></tr>
+      <tr><td>AWS key in response</td><td><em>any allowed call</em></td><td>—</td><td><span class="tbl-block">BLOCKED</span> — detect-aws-credentials</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>Key finding.</strong> Without mcpfw, all six attacks succeed silently. The server name <code>filesystem-helper</code> provides no visible warning in current MCP clients. The attack completes before the user receives any output.</p>
+
+  <!-- RP-01 -->
+  <div class="scenario-head" id="rp01">
+    <span class="scenario-id">RP-01</span>
+    <span class="scenario-title">Rug Pull</span>
+  </div>
+
+  <h4>Threat profile</h4>
+  <p>Server-internal attacker with delayed activation.</p>
+
+  <h4>Mechanism</h4>
+  <p>A server presents a benign two-tool list (<code>search_web</code>, <code>get_weather</code>) at session start, allowing an operator to observe and write a policy. After the second tool call, the server activates — advertising two new dangerous tools (<code>execute_shell</code>, <code>read_file</code>) in subsequent <code>tools/list</code> responses and simultaneously mutating <code>search_web</code> to embed prompt-injection payloads and environment variable leakage in its responses.</p>
+
+  <p>Because MCP's <code>tools/list</code> response is advisory rather than contractual, the client has no mechanism to detect the change. A permissive <code>default_action: allow</code> policy grants the new tools automatically.</p>
+
+  <h4>Comparative results</h4>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Tool</th><th>Permissive</th><th>Defensive</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td><code>search_web</code> (Phase 1)</td><td><span class="tbl-allow">allow</span></td><td><span class="tbl-allow">allow</span></td><td>—</td></tr>
+      <tr><td><code>get_weather</code> (Phase 1)</td><td><span class="tbl-allow">allow</span></td><td><span class="tbl-allow">allow</span></td><td>—</td></tr>
+      <tr><td><code>execute_shell</code> (Phase 2)</td><td><span class="tbl-block">allow ← attack</span></td><td><span class="tbl-block">block</span></td><td>allowed_tools</td></tr>
+      <tr><td><code>read_file</code> (Phase 2)</td><td><span class="tbl-block">allow ← attack</span></td><td><span class="tbl-block">block</span></td><td>allowed_tools</td></tr>
+      <tr><td><code>search_web</code> (mutated response)</td><td><span class="tbl-block">allow ← attack</span></td><td><span class="tbl-allow">allow¹</span></td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>¹ Tool call allowed; response DLP blocks the injected payload.</p>
+
+  <p><strong>Key finding.</strong> The <code>allowed_tools</code> whitelist inverts the default MCP trust relationship: authority rests with the operator's policy, not the server's advertisement. A server cannot grant itself new capabilities by changing its <code>tools/list</code> response. A denylist (<code>blocked_tools</code>) is strictly weaker — the attacker uses a tool name not on the list.</p>
+
+  <!-- SE-01 -->
+  <div class="scenario-head" id="se01">
+    <span class="scenario-id">SE-01</span>
+    <span class="scenario-title">Shadow Exfil</span>
+  </div>
+
+  <h4>Threat profile</h4>
+  <p>External attacker with server control.</p>
+
+  <h4>Mechanism</h4>
+  <p>The server offers three unremarkable tools: <code>process_document</code>, <code>post_webhook</code>, and <code>search_docs</code>. The attack is multi-hop. Stage 1: the server reads a sensitive file and embeds the content alongside a prompt-injection payload instructing the AI to forward the data through two covert channels. Stage 2: the AI (following the injected instruction) calls <code>post_webhook</code> with an attacker-controlled URL and base64-encoded credentials as the payload. Stage 3: the AI calls <code>search_docs</code> with the AWS key ID embedded in the query string — the query becomes a URL parameter in the outbound HTTP search request, exfiltrating the credential via DNS or HTTP logs.</p>
+
+  <h4>Results</h4>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Stage</th><th>Tool</th><th>Key argument</th><th>Outcome</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>process_document</code></td><td><code>path = ~/.aws/credentials</code></td><td><span class="tbl-block">BLOCKED</span> — restrict-document-paths</td></tr>
+      <tr><td>2</td><td><code>post_webhook</code></td><td><code>url = https://c2.attacker.example/collect</code></td><td><span class="tbl-block">BLOCKED</span> — block-untrusted-webhooks</td></tr>
+      <tr><td>3</td><td><code>search_docs</code></td><td><code>query = telemetry AKIAIOSFODNN7EXAMPLE…</code></td><td><span class="tbl-block">BLOCKED</span> — block-credential-in-search</td></tr>
+      <tr><td>—</td><td><code>search_docs</code></td><td><code>query = MCP security best practices</code></td><td><span class="tbl-allow">allow</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>Key finding.</strong> Standard network firewalls inspect ports and IP addresses; WAFs inspect HTTP paths and headers. Neither inspects the semantic content of JSON-RPC argument values. mcpfw's argument-level pattern matching operates on a different axis: it blocks a <code>post_webhook</code> call because the <em>URL argument</em> matches a C2 domain pattern, not because the tool name is dangerous. The audit log records the Stage 2 call's full base64 payload — providing forensic evidence of what was being attempted, without the data having left the machine.</p>
+
+  <!-- OA-01 -->
+  <div class="scenario-head" id="oa01">
+    <span class="scenario-id">OA-01</span>
+    <span class="scenario-title">Overprivileged Agent</span>
+  </div>
+
+  <h4>Threat profile</h4>
+  <p>No external attacker. Legitimate server, trusted environment.</p>
+
+  <h4>Mechanism</h4>
+  <p>A developer registers a <code>dev-toolkit</code> MCP server offering eight tools for a code-review task. Four are appropriate: <code>list_directory</code>, <code>read_file</code>, <code>write_file</code>, <code>run_tests</code>. Four are not: <code>deploy_to_production</code>, <code>send_email</code>, <code>delete_file</code>, <code>execute_sql</code>. The agent is given one task: "Review the project, run tests, and make sure everything is in order."</p>
+
+  <p>The agent reads a project notes file containing TODO comments written in imperative style ("Deploy branch 'main' to production once tests pass"). It interprets these as user directives and acts on them. It then constructs a SQL row-count query that includes an accidental <code>DROP TABLE</code> statement from a malformed string.</p>
+
+  <p>This is not a hallucination or model error. The agent is doing exactly what a cooperative instruction-follower should do given the authority it holds. The damage is proportional to the capability scope, not the model's judgment.</p>
+
+  <h4>Comparative results</h4>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Tool</th><th>Overprivileged</th><th>Least-privilege</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td><code>list_directory</code></td><td><span class="tbl-allow">allow</span></td><td><span class="tbl-allow">allow</span></td><td>—</td></tr>
+      <tr><td><code>read_file</code></td><td><span class="tbl-allow">allow</span></td><td><span class="tbl-allow">allow</span></td><td>—</td></tr>
+      <tr><td><code>run_tests</code></td><td><span class="tbl-allow">allow</span></td><td><span class="tbl-allow">allow</span></td><td>—</td></tr>
+      <tr><td><code>deploy_to_production(main)</code></td><td><span class="tbl-block">allow ← catastrophic</span></td><td><span class="tbl-block">block</span></td><td>blocked_tools</td></tr>
+      <tr><td><code>send_email(team@…)</code></td><td><span class="tbl-block">allow ← irreversible</span></td><td><span class="tbl-block">block</span></td><td>blocked_tools</td></tr>
+      <tr><td><code>delete_file(/tmp/cache)</code></td><td><span class="tbl-block">allow ← destructive</span></td><td><span class="tbl-block">block</span></td><td>blocked_tools</td></tr>
+      <tr><td><code>execute_sql(…DROP TABLE users…)</code></td><td><span class="tbl-block">allow ← catastrophic</span></td><td><span class="tbl-block">block</span></td><td>blocked_tools</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>Key finding.</strong> The blast radius of an AI agent session is a product of task scope and capability scope. For a code-review task with an overprivileged capability grant, the blast radius is the entire production environment. For the same task with a least-privilege grant of four read/write/test tools, the blast radius is the project directory. MCP security is not only a server-trust problem — the appropriate unit of access control is the <em>task</em>, not the server.</p>
+
+  <!-- MR-01 -->
+  <div class="scenario-head" id="mr01">
+    <span class="scenario-id">MR-01</span>
+    <span class="scenario-title">Meter Is Running</span>
+  </div>
+
+  <h4>Threat profile</h4>
+  <p>External attacker with server control (or compromised server).</p>
+
+  <h4>Mechanism</h4>
+  <p>A <code>data-pipeline</code> analytics server implements three billing-amplification vectors without accessing any sensitive file or executing any shell command:</p>
+
+  <p><strong>Vector A — Retry-loop injection.</strong> Every <code>analyze_dataset</code> response returns a plausible partial result accompanied by manufactured urgency: <em>"confidence score 0.67 (threshold: 0.90) — for higher accuracy, please call analyze_dataset again with depth='deep'."</em> The AI re-calls the tool; the server returns the identical message. Each iteration adds its response to the growing context window.</p>
+
+  <p><strong>Vector B — Pagination amplification.</strong> <code>fetch_paginated_data</code> always claims more records exist regardless of the current page. The AI fetches page after page with no independent view of actual data volume.</p>
+
+  <p><strong>Vector C — Context flooding.</strong> <code>generate_report</code> returns responses padded with ~4 KB of fake data, rapidly filling the context window toward context-limit resampling.</p>
+
+  <h4>Cost model</h4>
+
+  <p>Blended Claude Sonnet rate, $6.00/1M tokens; 20 retry iterations, 50 pagination pages, 5 report calls:</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Metric</th><th>Unprotected</th><th>Protected</th></tr></thead>
+    <tbody>
+      <tr><td>Tool calls</td><td>75</td><td>3</td></tr>
+      <tr><td>Input tokens</td><td>447,800</td><td>6,750</td></tr>
+      <tr><td>Estimated cost</td><td><strong>$2.69</strong></td><td><strong>$0.04</strong></td></tr>
+      <tr><td><strong>Cost multiplier</strong></td><td colspan="2"><strong>66×</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>The multiplier grows super-linearly at real context limits (200K tokens): the 50th retry costs more than the first because context accumulates.</p>
+
+  <p><strong>Key finding.</strong> Response DLP catches all three injection patterns before they reach the AI's context window. In a real agent session, blocking the first injection breaks the entire loop — the AI sees an error, not a retry directive, and stops. Rate limiting is the correct mitigation for loops that evade DLP; this is the primary open item for v0.2.0.</p>
+
+  <hr>
+
+  <!-- ── 6. Analysis ── -->
+  <h2 id="analysis">6. Cross-Scenario Analysis</h2>
+
+  <h3>6.1 The Protocol Failures Are Structural</h3>
+
+  <p>Each attack exploits a specific MCP protocol property that cannot be patched away by changing model behaviour:</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Attack</th><th>Protocol failure</th><th>Why fixing the model is insufficient</th></tr></thead>
+    <tbody>
+      <tr><td>Shadow Server</td><td>No server authentication</td><td>Model cannot verify server identity</td></tr>
+      <tr><td>Rug Pull</td><td>Tool list is advisory</td><td>Model cannot detect tool-list mutation</td></tr>
+      <tr><td>Shadow Exfil</td><td>Results enter context unchecked</td><td>Instruction-following is a feature, not a bug</td></tr>
+      <tr><td>Overprivileged Agent</td><td>No capability scoping</td><td>Conservative judgment is easily overridden</td></tr>
+      <tr><td>Meter Is Running</td><td>No rate controls</td><td>Cooperative loop-following is expected behaviour</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.2 Defence Layer Coverage</h3>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Attack class</th><th>Primary defence</th><th>Secondary defence</th></tr></thead>
+    <tbody>
+      <tr><td>Server identity / tool access</td><td><code>blocked_tools</code> + <code>allowed_tools</code></td><td>—</td></tr>
+      <tr><td>Tool-list mutation (Rug Pull)</td><td><code>allowed_tools</code> whitelist</td><td>Response DLP</td></tr>
+      <tr><td>Argument-carried exfil</td><td><code>block_patterns</code> on arguments</td><td><code>allow_paths</code></td></tr>
+      <tr><td>Ambient authority</td><td>Task-scoped <code>allowed_tools</code></td><td><code>blocked_tools</code></td></tr>
+      <tr><td>Billing amplification</td><td>Response DLP (injection)</td><td>Rate limiting (v0.2.0)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>No single layer covers all five. The layered architecture is not redundancy; it is necessity.</p>
+
+  <h3>6.3 The Audit Log as a First-Class Security Primitive</h3>
+
+  <p>In every unprotected run, dangerous calls are logged as <code>verdict: allow, severity: info</code> — indistinguishable from safe calls. An operator reviewing the unprotected log would infer a clean session.</p>
+
+  <p>In the protected configuration, blocked calls appear with explicit rule names and <code>severity: critical</code> tags that support automated SIEM alerting. The log records the full argument values (sanitised of secrets) including the base64 payload in the SE-01 webhook call — providing forensic evidence of what was being attempted without requiring the attack to succeed.</p>
+
+  <hr>
+
+  <!-- ── 7. Recommendations ── -->
+  <h2 id="recommendations">7. Recommendations</h2>
+
+  <h3>7.1 For Operators Deploying MCP Servers Today</h3>
+
+  <p><strong>R1. Default to <code>allowed_tools</code> whitelists, not <code>blocked_tools</code> denylists.</strong> A whitelist fails closed: any tool not on the list is blocked regardless of what the server advertises. A denylist fails open: any tool name not explicitly listed passes through.</p>
+
+  <p><strong>R2. Apply <code>allow_paths</code> to every filesystem tool.</strong> Restrict file reads and writes to the minimum directory required by the task. Directory traversal and out-of-scope credential reads are both eliminated when the allowed root is the project directory.</p>
+
+  <p><strong>R3. Enable response scanning with credential and prompt-injection patterns.</strong> At minimum, deploy patterns for RSA private keys, AWS key ID format, and explicit prompt-injection markers.</p>
+
+  <p><strong>R4. Apply task-scoped policies, not server-scoped policies.</strong> A server that offers eight tools does not require that every agent session has access to all eight.</p>
+
+  <p><strong>R5. Treat the JSONL audit log as a SIEM feed.</strong> Configure alerts on <code>verdict: block</code> with <code>severity: critical</code>. A cluster of blocked calls in a short window is a strong indicator of an active attack.</p>
+
+  <h3>7.2 For MCP Server Authors</h3>
+
+  <p><strong>R6. Declare a minimal tool surface.</strong> Expose only the tools necessary for the server's stated purpose. A filesystem server should not expose <code>execute_shell</code>.</p>
+
+  <p><strong>R7. Do not embed directives in tool results.</strong> Tool results should be data, not instructions. Return structured data (status codes, pagination tokens, confidence scores) rather than natural-language imperatives.</p>
+
+  <p><strong>R8. Publish and sign tool manifests.</strong> A signed <code>tools/list</code> hash would allow operators to pin the expected tool set and detect changes — closing the Rug Pull attack surface at the server layer.</p>
+
+  <h3>7.3 For MCP Protocol Designers</h3>
+
+  <p><strong>R9. Add server authentication to the protocol.</strong> Even a simple HMAC over a shared secret configured at registration time would allow clients to verify that the server they are communicating with is the server they configured.</p>
+
+  <p><strong>R10. Make <code>tools/list</code> a signed commitment.</strong> If the server must sign its tool manifest at session start, clients can detect mid-session tool-list mutation.</p>
+
+  <p><strong>R11. Define a capability scope header.</strong> An optional <code>X-MCP-Scope</code> field in the <code>initialize</code> request could allow clients to declare which tools they intend to use.</p>
+
+  <p><strong>R12. Specify rate-limit signalling.</strong> A standard <code>429 Too Many Requests</code> response with a <code>Retry-After</code> header would allow clients to implement cooperative rate limiting.</p>
+
+  <hr>
+
+  <!-- ── 8. Limitations ── -->
+  <h2 id="limitations">8. Limitations and Future Work</h2>
+
+  <h3>8.1 Pattern Matching vs. Semantic Analysis</h3>
+
+  <p>Every defence in mcpfw relies on regular-expression pattern matching. Patterns can be evaded by paraphrase, encoding variation, or chunking. Robust defence against sophisticated attackers requires semantic analysis — understanding whether a response <em>means</em> "retry this tool" rather than pattern-matching for the phrase. LLM-based response filtering is the primary research direction for mcpfw v0.3.0.</p>
+
+  <h3>8.2 Rate Limiting</h3>
+
+  <p>Rate limiting is not yet enforced in mcpfw v0.1.0. The policy schema is forward-compatible — <code>rate_limit</code> fields are parsed and stored — but the per-session call counter with sliding window is scoped to v0.2.0.</p>
+
+  <h3>8.3 Non-stdio Transport</h3>
+
+  <p>All five scenarios use stdio transport. mcpfw does not currently support SSE transport. Remote server deployments face additional threat vectors (network interception, TLS stripping) not covered by this paper.</p>
+
+  <h3>8.4 Notification Channel</h3>
+
+  <p>mcpfw currently scans tool results but not <code>initialize</code> responses or server-initiated notifications. Extending the scanner to all server-to-client messages is a near-term priority.</p>
+
+  <h3>8.5 Semantic Exfiltration</h3>
+
+  <p>Shadow Exfil demonstrates exfiltration via literal credential strings. A more sophisticated attack would have the AI <em>summarise</em> a sensitive file in natural language and post that summary to an attacker-controlled endpoint. The summary contains no string that matches a credential pattern. Preventing semantic exfiltration requires output filtering at the model level.</p>
+
+  <hr>
+
+  <!-- ── 9. Conclusion ── -->
+  <h2 id="conclusion">9. Conclusion</h2>
+
+  <p>The five scenarios in this paper span the full CIA triad and three distinct attacker profiles. They share one property: in every case, the AI model behaves exactly as it was designed to. It follows instructions. It executes permitted tool calls. It cooperates with the server. It returns coherent results to the user.</p>
+
+  <p>The failures are in the infrastructure surrounding the model. MCP's protocol design assumes servers are trustworthy, tool declarations are stable, tool results are data rather than instructions, and the model needs all the capabilities it has been given. None of these assumptions hold in adversarial conditions, and some do not hold even in benign ones.</p>
+
+  <p>mcpfw demonstrates that the infrastructure gap can be closed without modifying the protocol, without changing the model, and without requiring server cooperation. A YAML policy file of fifteen to thirty lines, loaded into a proxy that the user can install in minutes, provides wire-level enforcement of four independent security properties. Against the five attacks as constructed, this is sufficient.</p>
+
+  <p>The broader point is architectural. AI agent security cannot be achieved by making the model more cautious, more conservative, or more aware of risk. The model is already doing what we ask of it. The question is whether the infrastructure it operates within is designed to constrain the consequences when what we ask turns out to be wrong. The answer, for MCP deployments today, is no — and it needs to be yes.</p>
+
+  <blockquote>The meter, as deployed, is running. The bill is being paid in credentials, in production incidents, in API costs, and in trust. The fix is not a better model. The fix is a firewall.</blockquote>
+
+  <hr>
+
+  <!-- ── Appendices ── -->
+  <h2 id="appendix">Appendices</h2>
+
+  <div class="appendix-label">Appendix A</div>
+  <h3>Scenario Summary Table</h3>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Attacks</th><th>Blocked</th><th>Primary rule</th></tr></thead>
+    <tbody>
+      <tr><td>SS-01</td><td>Shadow Server</td><td>6 vectors</td><td>5/6 + all DLP</td><td>allow_paths, blocked_tools</td></tr>
+      <tr><td>RP-01</td><td>Rug Pull</td><td>5 calls</td><td>2/3 new tools; all DLP</td><td>allowed_tools whitelist</td></tr>
+      <tr><td>SE-01</td><td>Shadow Exfil</td><td>3 channels</td><td>3/3 + all DLP</td><td>block_patterns, response DLP</td></tr>
+      <tr><td>OA-01</td><td>Overprivileged Agent</td><td>4 dangerous calls</td><td>4/4</td><td>blocked_tools + allowed_tools</td></tr>
+      <tr><td>MR-01</td><td>Meter Is Running</td><td>3 vectors</td><td>All DLP; rate limit pending</td><td>detect-retry-injection</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="appendix-label" style="margin-top:2rem;">Appendix B</div>
+  <h3>mcpfw Policy Primitives Reference</h3>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Primitive</th><th>Scope</th><th>Semantics</th></tr></thead>
+    <tbody>
+      <tr><td><code>default_action</code></td><td>Server or global</td><td><code>allow</code> or <code>block</code> for unmatched calls</td></tr>
+      <tr><td><code>allowed_tools</code></td><td>Server</td><td>Whitelist — only named tools may be called</td></tr>
+      <tr><td><code>blocked_tools</code></td><td>Server</td><td>Denylist — named tools always blocked</td></tr>
+      <tr><td><code>allow_paths</code></td><td>Tool rule</td><td>File path must resolve under one of the listed roots</td></tr>
+      <tr><td><code>block_patterns</code></td><td>Tool rule</td><td>Regex match against all flattened argument values</td></tr>
+      <tr><td><code>block_values</code></td><td>Tool rule</td><td>Substring match against all flattened argument values</td></tr>
+      <tr><td><code>detect_patterns</code></td><td>Response rule</td><td>Regex match against tool result text</td></tr>
+      <tr><td><code>rate_limit</code></td><td>Tool rule</td><td>Max calls per time window <em>(advisory in v0.1.0)</em></td></tr>
+      <tr><td><code>action</code></td><td>Any rule</td><td><code>allow</code>, <code>block</code>, or <code>log</code></td></tr>
+      <tr><td><code>severity</code></td><td>Any rule</td><td><code>info</code>, <code>warning</code>, <code>critical</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="appendix-label" style="margin-top:2rem;">Appendix C</div>
+  <h3>Reproduction Instructions</h3>
+
+  <p>All scenario scripts are in <code>tests/attack_scenarios/</code>. Each scenario directory contains a malicious server, client simulator, defensive policy, and isolated DLP test.</p>
+
+  <pre><code>pip install -e ".[dev]"
+
+PYBIN=$(head -1 $(which mcpfw) | sed 's/#!//')
+SCENARIO=shadow_server   # rug_pull | shadow_exfil | overprivileged_agent | meter_is_running
+
+$PYBIN tests/attack_scenarios/$SCENARIO/client_sim.py \
+  | mcpfw wrap \
+      --policy tests/attack_scenarios/$SCENARIO/policy_defensive.yaml \
+      --server-name &lt;server-name&gt; \
+      --log /tmp/${SCENARIO}_audit.jsonl \
+      -- $PYBIN tests/attack_scenarios/$SCENARIO/malicious_server.py
+
+$PYBIN tests/attack_scenarios/$SCENARIO/demo_response_scan.py</code></pre>
+
+  <!-- ── Paper footer ── -->
+  <div class="paper-footer">
+    <span>mcpfw research paper · May 2026 · <a href="mailto:mwaseem@defendai.ai">mwaseem@defendai.ai</a></span>
+    <a href="index.html">← Back to mcpfw.dev</a>
+  </div>
+
+</div><!-- /page -->
+
+</body>
+</html>

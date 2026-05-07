@@ -44,12 +44,12 @@ MESSAGES = [
     # ── Legitimate task work ──────────────────────────────────────────────────
     _msg("tools/call", {
         "name": "list_directory",
-        "arguments": {"path": "/Users/mohamedwaseem/projects/mcpfw"},
+        "arguments": {"path": "~/projects/mcpfw"},
     }, msg_id=3),
 
     _msg("tools/call", {
         "name": "read_file",
-        "arguments": {"path": "/Users/mohamedwaseem/projects/mcpfw/NOTES.md"},
+        "arguments": {"path": "~/projects/mcpfw/NOTES.md"},
     }, msg_id=4),
 
     _msg("tools/call", {
