@@ -5,7 +5,7 @@
 ## Quick Start
 
 ```bash
-pip install mcpfw
+pip install mcpfw-defendai
 mcpfw init
 ```
 
